@@ -38,6 +38,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
+import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.column.ParquetProperties;
 import org.junit.Assert;
 import org.junit.Test;
@@ -184,7 +185,7 @@ public class TestColumnIO {
     writeGroups(schemaWithExtraField, memPageStoreForSchemaWithExtraField, groupFactory2.newGroup().append("a", 1).append("b", 2).append("c",3));
 
     {
-      List<Group> groups = new ArrayList<Group>();
+      List<Group> groups = new ArrayList<>();
       groups.addAll(readGroups(memPageStoreForOriginalSchema, orginalSchema, schemaWithExtraField, 1));
       groups.addAll(readGroups(memPageStoreForSchemaWithExtraField, schemaWithExtraField, schemaWithExtraField, 1));
       // TODO: add once we have the support for empty projection
@@ -248,7 +249,7 @@ public class TestColumnIO {
     writeGroups(orginalSchema, store, groupFactory.newGroup().append("a", 1).append("b", 2));
 
     {
-      List<Group> groups = new ArrayList<Group>();
+      List<Group> groups = new ArrayList<>();
       groups.addAll(readGroups(store, orginalSchema, projectedSchema, 1));
       Object[][] expected = {
               {2},
@@ -278,7 +279,7 @@ public class TestColumnIO {
     ColumnIOFactory columnIOFactory = new ColumnIOFactory(true);
     MessageColumnIO columnIO = columnIOFactory.getColumnIO(requestedSchema, fileSchema);
     RecordReaderImplementation<Group> recordReader = getRecordReader(columnIO, requestedSchema, memPageStore);
-    List<Group> groups = new ArrayList<Group>();
+    List<Group> groups = new ArrayList<>();
     for (int i = 0; i < n; i++) {
       groups.add(recordReader.read());
     }
@@ -327,7 +328,7 @@ public class TestColumnIO {
 
       validateFSA(expectedFSA, columnIO, recordReader);
 
-      List<Group> records = new ArrayList<Group>();
+      List<Group> records = new ArrayList<>();
       records.add(recordReader.read());
       records.add(recordReader.read());
 
@@ -342,7 +343,7 @@ public class TestColumnIO {
     {
       MessageColumnIO columnIO2 = columnIOFactory.getColumnIO(schema2);
 
-      List<Group> records = new ArrayList<Group>();
+      List<Group> records = new ArrayList<>();
       RecordReaderImplementation<Group> recordReader = getRecordReader(columnIO2, schema2, memPageStore);
 
       validateFSA(expectedFSA2, columnIO2, recordReader);
@@ -402,7 +403,7 @@ public class TestColumnIO {
       }
       MessageType groupSchema = new MessageType("schema"+i, current);
       GroupFactory gf = new SimpleGroupFactory(groupSchema);
-      List<Group> groups = new ArrayList<Group>();
+      List<Group> groups = new ArrayList<>();
       Group root = gf.newGroup();
       Group currentGroup = root;
       for (int j = 0; j < i; j++) {
@@ -419,7 +420,7 @@ public class TestColumnIO {
       }
       MessageType groupSchema = new MessageType("schema"+(i+6), current);
       GroupFactory gf = new SimpleGroupFactory(groupSchema);
-      List<Group> groups = new ArrayList<Group>();
+      List<Group> groups = new ArrayList<>();
       Group rootDefined = gf.newGroup();
       Group rootUndefined = gf.newGroup();
       Group currentDefinedGroup = rootDefined;
@@ -440,7 +441,7 @@ public class TestColumnIO {
       }
       MessageType groupSchema = new MessageType("schema"+(i+12), current);
       GroupFactory gf = new SimpleGroupFactory(groupSchema);
-      List<Group> groups = new ArrayList<Group>();
+      List<Group> groups = new ArrayList<>();
       Group rootDefined = gf.newGroup();
       Group rootUndefined = gf.newGroup();
       Group currentDefinedGroup = rootDefined;
@@ -556,7 +557,7 @@ public class TestColumnIO {
 
   @Test
   public void testGroupWriter() {
-    List<Group> result = new ArrayList<Group>();
+    List<Group> result = new ArrayList<>();
     final GroupRecordConverter groupRecordConverter = new GroupRecordConverter(schema);
     RecordConsumer groupConsumer = new ConverterConsumer(groupRecordConverter.getRootConverter(), schema);
     GroupWriter groupWriter = new GroupWriter(new RecordConsumerLoggingWrapper(groupConsumer), schema);

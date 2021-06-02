@@ -17,7 +17,7 @@
   ~ under the License.
   -->
 
-Parquet MR [![Build Status](https://travis-ci.org/apache/parquet-mr.svg?branch=master)](http://travis-ci.org/apache/parquet-mr)
+Parquet MR [![Build Status](https://github.com/apache/parquet-mr/workflows/Test/badge.svg)](https://github.com/apache/parquet-mr/actions)
 ======
 
 Parquet-MR contains the java implementation of the [Parquet format](https://github.com/apache/parquet-format).
@@ -35,19 +35,19 @@ Parquet-MR uses Maven to build and depends on the thrift compiler (protoc is now
 To build and install the thrift compiler, run:
 
 ```
-wget -nv http://archive.apache.org/dist/thrift/0.12.0/thrift-0.12.0.tar.gz
-tar xzf thrift-0.12.0.tar.gz
-cd thrift-0.12.0
+wget -nv http://archive.apache.org/dist/thrift/0.14.1/thrift-0.14.1.tar.gz
+tar xzf thrift-0.14.1.tar.gz
+cd thrift-0.14.1
 chmod +x ./configure
-./configure --disable-gen-erl --disable-gen-hs --without-ruby --without-haskell --without-erlang --without-php --without-nodejs
+./configure --disable-libs
 sudo make install
 ```
 
-If you're on OSX and use homebrew, you can instead install Thrift 0.12.0 with `brew` and ensure that it comes first in your `PATH`.
+If you're on OSX and use homebrew, you can instead install Thrift 0.14.1 with `brew` and ensure that it comes first in your `PATH`.
 
 ```
-brew install thrift@0.12
-export PATH="/usr/local/opt/thrift@0.12.0/bin:$PATH"
+brew install thrift
+export PATH="/usr/local/opt/thrift@0.14.1/bin:$PATH"
 ```
 
 ### Build Parquet with Maven
@@ -135,33 +135,33 @@ To run the unit tests: `mvn test`
 
 To build the jars: `mvn package`
 
-The build runs in [Travis CI](http://travis-ci.org/apache/parquet-mr):
-[![Build Status](https://travis-ci.org/apache/parquet-mr.svg?branch=master)](http://travis-ci.org/apache/parquet-mr)
+The build runs in [GitHub Actions](https://github.com/apache/parquet-mr/actions):
+[![Build Status](https://github.com/apache/parquet-mr/workflows/Test/badge.svg)](https://github.com/apache/parquet-mr/actions)
 
 ## Add Parquet as a dependency in Maven
-The current release is version `1.10.0`
+The current release is version `1.12.0`
 
 ```xml
   <dependencies>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-common</artifactId>
-      <version>1.10.0</version>
+      <version>1.12.0</version>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-encoding</artifactId>
-      <version>1.10.0</version>
+      <version>1.12.0</version>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-column</artifactId>
-      <version>1.10.0</version>
+      <version>1.12.0</version>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-hadoop</artifactId>
-      <version>1.10.0</version>
+      <version>1.12.0</version>
     </dependency>
   </dependencies>
 ```

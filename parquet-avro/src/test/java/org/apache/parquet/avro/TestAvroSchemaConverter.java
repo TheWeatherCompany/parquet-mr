@@ -20,6 +20,7 @@ package org.apache.parquet.avro;
 
 import com.google.common.collect.Lists;
 import com.google.common.io.Resources;
+import org.apache.avro.JsonProperties;
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 import org.apache.hadoop.conf.Configuration;
@@ -28,7 +29,6 @@ import org.apache.parquet.schema.MessageTypeParser;
 import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.Types;
-import org.codehaus.jackson.node.NullNode;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -37,6 +37,14 @@ import java.util.Collections;
 
 import static org.apache.avro.Schema.Type.INT;
 import static org.apache.avro.Schema.Type.LONG;
+import static org.apache.avro.Schema.Type.STRING;
+import static org.apache.avro.SchemaCompatibility.checkReaderWriterCompatibility;
+import static org.apache.avro.SchemaCompatibility.SchemaCompatibilityType.COMPATIBLE;
+import static org.apache.parquet.avro.AvroTestUtil.field;
+import static org.apache.parquet.avro.AvroTestUtil.optionalField;
+import static org.apache.parquet.avro.AvroTestUtil.primitive;
+import static org.apache.parquet.avro.AvroTestUtil.record;
+import static org.apache.parquet.avro.AvroWriteSupport.WRITE_FIXED_AS_INT96;
 import static org.apache.parquet.schema.OriginalType.DATE;
 import static org.apache.parquet.schema.OriginalType.TIMESTAMP_MICROS;
 import static org.apache.parquet.schema.OriginalType.TIMESTAMP_MILLIS;
@@ -195,13 +203,13 @@ public class TestAvroSchemaConverter {
             "    }\n" +
             "  }\n" +
             "  required group mymap (MAP) {\n" +
-            "    repeated group map (MAP_KEY_VALUE) {\n" +
+            "    repeated group key_value (MAP_KEY_VALUE) {\n" +
             "      required binary key (UTF8);\n" +
             "      required int32 value;\n" +
             "    }\n" +
             "  }\n" +
             "  required group myemptymap (MAP) {\n" +
-            "    repeated group map (MAP_KEY_VALUE) {\n" +
+            "    repeated group key_value (MAP_KEY_VALUE) {\n" +
             "      required binary key (UTF8);\n" +
             "      required int32 value;\n" +
             "    }\n" +
@@ -242,13 +250,13 @@ public class TestAvroSchemaConverter {
             "    repeated int32 array;\n" +
             "  }\n" +
             "  required group mymap (MAP) {\n" +
-            "    repeated group map (MAP_KEY_VALUE) {\n" +
+            "    repeated group key_value (MAP_KEY_VALUE) {\n" +
             "      required binary key (UTF8);\n" +
             "      required int32 value;\n" +
             "    }\n" +
             "  }\n" +
             "  required group myemptymap (MAP) {\n" +
-            "    repeated group map (MAP_KEY_VALUE) {\n" +
+            "    repeated group key_value (MAP_KEY_VALUE) {\n" +
             "      required binary key (UTF8);\n" +
             "      required int32 value;\n" +
             "    }\n" +
@@ -292,8 +300,8 @@ public class TestAvroSchemaConverter {
   public void testOptionalFields() throws Exception {
     Schema schema = Schema.createRecord("record1", null, null, false);
     Schema optionalInt = optional(Schema.create(INT));
-    schema.setFields(Arrays.asList(
-        new Schema.Field("myint", optionalInt, null, NullNode.getInstance())
+    schema.setFields(Collections.singletonList(
+      new Schema.Field("myint", optionalInt, null, JsonProperties.NULL_VALUE)
     ));
     testRoundTripConversion(
         schema,
@@ -313,7 +321,7 @@ public class TestAvroSchemaConverter {
         schema,
         "message record1 {\n" +
             "  required group myintmap (MAP) {\n" +
-            "    repeated group map (MAP_KEY_VALUE) {\n" +
+            "    repeated group key_value (MAP_KEY_VALUE) {\n" +
             "      required binary key (UTF8);\n" +
             "      optional int32 value;\n" +
             "    }\n" +
@@ -347,7 +355,7 @@ public class TestAvroSchemaConverter {
         Schema.create(INT),
         Schema.create(Schema.Type.FLOAT)));
     schema.setFields(Arrays.asList(
-        new Schema.Field("myunion", multipleTypes, null, NullNode.getInstance())));
+        new Schema.Field("myunion", multipleTypes, null, JsonProperties.NULL_VALUE)));
 
     // Avro union is modelled using optional data members of the different
     // types. This does not translate back into an Avro union
@@ -366,8 +374,8 @@ public class TestAvroSchemaConverter {
     Schema innerRecord = Schema.createRecord("element", null, null, false);
     Schema optionalString = optional(Schema.create(Schema.Type.STRING));
     innerRecord.setFields(Lists.newArrayList(
-        new Schema.Field("s1", optionalString, null, NullNode.getInstance()),
-        new Schema.Field("s2", optionalString, null, NullNode.getInstance())
+        new Schema.Field("s1", optionalString, null, JsonProperties.NULL_VALUE),
+        new Schema.Field("s2", optionalString, null, JsonProperties.NULL_VALUE)
     ));
     Schema schema = Schema.createRecord("HasArray", null, null, false);
     schema.setFields(Lists.newArrayList(
@@ -393,8 +401,8 @@ public class TestAvroSchemaConverter {
     Schema innerRecord = Schema.createRecord("InnerRecord", null, null, false);
     Schema optionalString = optional(Schema.create(Schema.Type.STRING));
     innerRecord.setFields(Lists.newArrayList(
-        new Schema.Field("s1", optionalString, null, NullNode.getInstance()),
-        new Schema.Field("s2", optionalString, null, NullNode.getInstance())
+        new Schema.Field("s1", optionalString, null, JsonProperties.NULL_VALUE),
+        new Schema.Field("s2", optionalString, null, JsonProperties.NULL_VALUE)
     ));
     Schema schema = Schema.createRecord("HasArray", null, null, false);
     schema.setFields(Lists.newArrayList(
@@ -420,7 +428,7 @@ public class TestAvroSchemaConverter {
         Schema.create(INT))));
     Schema schema = Schema.createRecord("AvroCompatListInList", null, null, false);
     schema.setFields(Lists.newArrayList(
-        new Schema.Field("listOfLists", listOfLists, null, NullNode.getInstance())
+        new Schema.Field("listOfLists", listOfLists, null, JsonProperties.NULL_VALUE)
     ));
     System.err.println("Avro schema: " + schema.toString(true));
 
@@ -449,7 +457,7 @@ public class TestAvroSchemaConverter {
         Schema.create(INT))));
     Schema schema = Schema.createRecord("ThriftCompatListInList", null, null, false);
     schema.setFields(Lists.newArrayList(
-        new Schema.Field("listOfLists", listOfLists, null, NullNode.getInstance())
+        new Schema.Field("listOfLists", listOfLists, null, JsonProperties.NULL_VALUE)
     ));
     System.err.println("Avro schema: " + schema.toString(true));
 
@@ -482,7 +490,7 @@ public class TestAvroSchemaConverter {
         Schema.create(INT))));
     Schema schema = Schema.createRecord("UnknownTwoLevelListInList", null, null, false);
     schema.setFields(Lists.newArrayList(
-        new Schema.Field("listOfLists", listOfLists, null, NullNode.getInstance())
+        new Schema.Field("listOfLists", listOfLists, null, JsonProperties.NULL_VALUE)
     ));
     System.err.println("Avro schema: " + schema.toString(true));
 
@@ -579,6 +587,32 @@ public class TestAvroSchemaConverter {
   }
 
   @Test
+  public void testParquetInt96AsFixed12AvroType() throws Exception {
+    Configuration enableInt96ReadingConfig = new Configuration();
+    enableInt96ReadingConfig.setBoolean(AvroReadSupport.READ_INT96_AS_FIXED, true);
+
+    Schema schema = Schema.createRecord("myrecord", null, null, false);
+    Schema int96schema = Schema.createFixed("INT96", "INT96 represented as byte[12]", null, 12);
+    schema.setFields(Collections.singletonList(
+      new Schema.Field("int96_field", int96schema, null, null)));
+
+    testParquetToAvroConversion(enableInt96ReadingConfig, schema, "message myrecord {\n" +
+      "  required int96 int96_field;\n" +
+      "}\n");
+  }
+
+  @Test
+  public void testParquetInt96DefaultFail() throws Exception {
+    Schema schema = Schema.createRecord("myrecord", null, null, false);
+
+    MessageType parquetSchemaWithInt96 = MessageTypeParser.parseMessageType("message myrecord {\n  required int96 int96_field;\n}\n");
+
+    assertThrows("INT96 is deprecated. As interim enable READ_INT96_AS_FIXED  flag to read as byte array.",
+      IllegalArgumentException.class,
+      () -> new AvroSchemaConverter().convert(parquetSchemaWithInt96));
+  }
+
+  @Test
   public void testDateType() throws Exception {
     Schema date = LogicalTypes.date().addToSchema(Schema.create(INT));
     Schema expected = Schema.createRecord("myrecord", null, null, false,
@@ -599,12 +633,7 @@ public class TestAvroSchemaConverter {
       }
 
       assertThrows("Should not allow TIME_MICROS with " + primitive,
-          IllegalArgumentException.class, new Runnable() {
-            @Override
-            public void run() {
-              new AvroSchemaConverter().convert(message(type));
-            }
-          });
+          IllegalArgumentException.class, () -> new AvroSchemaConverter().convert(message(type)));
     }
   }
 
@@ -629,12 +658,7 @@ public class TestAvroSchemaConverter {
       }
 
       assertThrows("Should not allow TIME_MICROS with " + primitive,
-          IllegalArgumentException.class, new Runnable() {
-            @Override
-            public void run() {
-              new AvroSchemaConverter().convert(message(type));
-            }
-          });
+          IllegalArgumentException.class, () -> new AvroSchemaConverter().convert(message(type)));
     }
   }
 
@@ -659,12 +683,7 @@ public class TestAvroSchemaConverter {
       }
 
       assertThrows("Should not allow TIME_MICROS with " + primitive,
-          IllegalArgumentException.class, new Runnable() {
-            @Override
-            public void run() {
-              new AvroSchemaConverter().convert(message(type));
-            }
-          });
+          IllegalArgumentException.class, () -> new AvroSchemaConverter().convert(message(type)));
     }
   }
 
@@ -689,12 +708,7 @@ public class TestAvroSchemaConverter {
       }
 
       assertThrows("Should not allow TIMESTAMP_MILLIS with " + primitive,
-          IllegalArgumentException.class, new Runnable() {
-            @Override
-            public void run() {
-              new AvroSchemaConverter().convert(message(type));
-            }
-          });
+          IllegalArgumentException.class, () -> new AvroSchemaConverter().convert(message(type)));
     }
   }
 
@@ -719,13 +733,127 @@ public class TestAvroSchemaConverter {
       }
 
       assertThrows("Should not allow TIMESTAMP_MICROS with " + primitive,
-          IllegalArgumentException.class, new Runnable() {
-            @Override
-            public void run() {
-              new AvroSchemaConverter().convert(message(type));
-            }
-          });
+          IllegalArgumentException.class, () -> new AvroSchemaConverter().convert(message(type)));
     }
+  }
+
+  @Test
+  public void testReuseNameInNestedStructure() throws Exception {
+    Schema innerA1 = record("a1", "a12",
+      field("a4", primitive(Schema.Type.FLOAT)));
+
+    Schema outerA1 = record("a1",
+      field("a2", primitive(Schema.Type.FLOAT)),
+      optionalField("a1", innerA1));
+    Schema schema = record("Message",
+      optionalField("a1", outerA1));
+
+    String parquetSchema = "message Message {\n" +
+        "      optional group a1 {\n" +
+        "        required float a2;\n" +
+        "        optional group a1 {\n" +
+        "          required float a4;\n"+
+        "         }\n" +
+        "      }\n" +
+        "}\n";
+
+    testParquetToAvroConversion(schema, parquetSchema);
+    testParquetToAvroConversion(NEW_BEHAVIOR, schema, parquetSchema);
+  }
+
+  @Test
+  public void testReuseNameInNestedStructureAtSameLevel() throws Exception {
+    Schema a2 = record("a2",
+      field("a4", primitive(Schema.Type.FLOAT)));
+    Schema a22 = record("a2", "a22",
+      field("a4", primitive(Schema.Type.FLOAT)),
+      field("a5", primitive(Schema.Type.FLOAT)));
+
+    Schema a1 = record("a1",
+      optionalField("a2", a2));
+    Schema a3 = record("a3",
+      optionalField("a2", a22));
+
+    Schema schema = record("Message",
+      optionalField("a1", a1),
+      optionalField("a3", a3));
+
+    String parquetSchema = "message Message {\n" +
+      "      optional group a1 {\n" +
+      "        optional group a2 {\n" +
+      "          required float a4;\n"+
+      "         }\n" +
+      "      }\n" +
+      "      optional group a3 {\n" +
+      "        optional group a2 {\n" +
+      "          required float a4;\n"+
+      "          required float a5;\n"+
+      "         }\n" +
+      "      }\n" +
+      "}\n";
+
+    testParquetToAvroConversion(schema, parquetSchema);
+    testParquetToAvroConversion(NEW_BEHAVIOR, schema, parquetSchema);
+  }
+
+  @Test
+  public void testUUIDType() throws Exception {
+    Schema fromAvro = Schema.createRecord("myrecord", null, null, false,
+        Arrays.asList(new Schema.Field("uuid", LogicalTypes.uuid().addToSchema(Schema.create(STRING)), null, null)));
+    String parquet = "message myrecord {\n" +
+        "  required binary uuid (STRING);\n" +
+        "}\n";
+    Schema toAvro = Schema.createRecord("myrecord", null, null, false,
+        Arrays.asList(new Schema.Field("uuid", Schema.create(STRING), null, null)));
+
+    testAvroToParquetConversion(fromAvro, parquet);
+    testParquetToAvroConversion(toAvro, parquet);
+
+    assertEquals(COMPATIBLE, checkReaderWriterCompatibility(fromAvro, toAvro).getType());
+  }
+
+  @Test
+  public void testUUIDTypeWithParquetUUID() throws Exception {
+    Schema uuid = LogicalTypes.uuid().addToSchema(Schema.create(STRING));
+    Schema expected = Schema.createRecord("myrecord", null, null, false,
+        Arrays.asList(new Schema.Field("uuid", uuid, null, null)));
+
+    testRoundTripConversion(AvroTestUtil.conf(AvroWriteSupport.WRITE_PARQUET_UUID, true),
+        expected,
+        "message myrecord {\n" +
+            "  required fixed_len_byte_array(16) uuid (UUID);\n" +
+            "}\n");
+  }
+
+  @Test
+  public void testAvroFixed12AsParquetInt96Type() throws Exception {
+    Schema schema = new Schema.Parser().parse(
+        Resources.getResource("fixedToInt96.avsc").openStream());
+
+    Configuration conf = new Configuration();
+    conf.setStrings(WRITE_FIXED_AS_INT96, "int96", "mynestedrecord.int96inrecord", "mynestedrecord.myarrayofoptional",
+        "mynestedrecord.mymap");
+    testAvroToParquetConversion(conf, schema, "message org.apache.parquet.avro.fixedToInt96 {\n"
+        + "  required int96 int96;\n"
+        + "  required fixed_len_byte_array(12) notanint96;\n"
+        + "  required group mynestedrecord {\n"
+        + "    required int96 int96inrecord;\n"
+        + "    required group myarrayofoptional (LIST) {\n"
+        + "      repeated int96 array;\n"
+        + "    }\n"
+        + "    required group mymap (MAP) {\n"
+        + "      repeated group key_value (MAP_KEY_VALUE) {\n"
+        + "        required binary key (STRING);\n"
+        + "        required int96 value;\n"
+        + "      }\n"
+        + "    }\n"
+        + "  }\n"
+        + "  required fixed_len_byte_array(1) onebytefixed;\n"
+        + "}");
+
+    conf.setStrings(WRITE_FIXED_AS_INT96, "onebytefixed");
+    assertThrows("Exception should be thrown for fixed types to be converted to INT96 where the size is not 12 bytes",
+        IllegalArgumentException.class, () -> new AvroSchemaConverter(conf).convert(schema));
   }
 
   public static Schema optional(Schema original) {

@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -18,17 +18,23 @@
  */
 package org.apache.parquet.proto;
 
+import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.MessageOrBuilder;
+import com.twitter.elephantbird.util.Protobufs;
+
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.parquet.hadoop.ParquetWriter;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.apache.parquet.io.InputFile;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 public class TestUtils {
@@ -41,9 +47,7 @@ public class TestUtils {
   }
 
   public static <T extends MessageOrBuilder> List<T> writeAndRead(T... records) throws IOException {
-    Class<? extends Message> cls = inferRecordsClass(records);
-
-    Path file = writeMessages(cls, records);
+    Path file = writeMessages(records);
 
     return readMessages(file);
   }
@@ -77,12 +81,26 @@ public class TestUtils {
 
     checkSameBuilderInstance(messages);
 
-    List<MessageOrBuilder> input = cloneList(messages);
-
-    List<MessageOrBuilder> output = (List<MessageOrBuilder>) writeAndRead(messages);
-
+    List<MessageOrBuilder> output = writeAndRead(messages);
     List<Message> outputAsMessages = asMessages(output);
-    assertEquals("The protocol buffers are not same:\n", asMessages(input), outputAsMessages);
+    Descriptors.Descriptor messageDescriptor = Protobufs.getMessageDescriptor(asMessage(messages[0]).getClass());
+    Descriptors.FileDescriptor.Syntax syntax = messageDescriptor.getFile().getSyntax();
+    for (int i = 0 ; i < messages.length ; i++) {
+      if (Descriptors.FileDescriptor.Syntax.PROTO2.equals(syntax)) {
+        com.google.common.truth.extensions.proto.ProtoTruth.assertThat(outputAsMessages.get(i))
+          .ignoringRepeatedFieldOrder()
+          .reportingMismatchesOnly()
+          .isEqualTo(asMessage(messages[i]));
+      } else if (Descriptors.FileDescriptor.Syntax.PROTO3.equals(syntax)) {
+        // proto3 will return default values for absent fields which is what is returned in output
+        // this is why we can ignore absent fields here
+        com.google.common.truth.extensions.proto.ProtoTruth.assertThat(outputAsMessages.get(i))
+          .ignoringRepeatedFieldOrder()
+          .ignoringFieldAbsence()
+          .reportingMismatchesOnly()
+          .isEqualTo(asMessage(messages[i]));
+      }
+    }
     return (List<T>) outputAsMessages;
   }
 
@@ -101,7 +119,6 @@ public class TestUtils {
     for (MessageOrBuilder messageOrBuilder : mobs) {
       result.add(asMessage(messageOrBuilder));
     }
-
     return result;
   }
 
@@ -145,36 +162,46 @@ public class TestUtils {
    * Reads messages from given file. The file could/should be created by method writeMessages
    */
   public static <T extends MessageOrBuilder> List<T> readMessages(Path file) throws IOException {
-    ProtoParquetReader<T> reader = new ProtoParquetReader<T>(file);
+    return readMessages(file, null);
+  }
 
-    List<T> result = new ArrayList<T>();
-    boolean hasNext = true;
-    while (hasNext) {
-      T item = reader.read();
-      if (item == null) {
-        hasNext = false;
-      } else {
-        assertNotNull(item);
-        // It makes sense to return message but production code wont work with messages
-        result.add((T) asMessage(item).toBuilder());
-      }
+  /**
+   * Read messages from given file into the expected proto class.
+   * @param file
+   * @param messageClass
+   * @param <T>
+   * @return List of protobuf messages for the given type.
+   */
+  public static <T extends MessageOrBuilder> List<T> readMessages(Path file, Class<T> messageClass) throws IOException {
+    InputFile inputFile = HadoopInputFile.fromPath(file, new Configuration());
+    ParquetReader.Builder readerBuilder = ProtoParquetReader.builder(inputFile);
+    if (messageClass != null) {
+      readerBuilder.set(ProtoReadSupport.PB_CLASS, messageClass.getName()).build();
     }
-    reader.close();
-    return result;
+    try (ParquetReader reader = readerBuilder.build()) {
+      List<T> result = new ArrayList<T>();
+      boolean hasNext = true;
+      while (hasNext) {
+        T item = (T) reader.read();
+        if (item == null) {
+          hasNext = false;
+        } else {
+          result.add((T) asMessage(item));
+        }
+      }
+      return result;
+    }
   }
 
   /**
    * Writes messages to temporary file and returns its path.
    */
   public static Path writeMessages(MessageOrBuilder... records) throws IOException {
-    return writeMessages(inferRecordsClass(records), records);
-  }
-
-  public static Path writeMessages(Class<? extends Message> cls, MessageOrBuilder... records) throws IOException {
     Path file = someTemporaryFilePath();
+    Class<? extends Message> cls = inferRecordsClass(records);
 
-    ProtoParquetWriter<MessageOrBuilder> writer =
-            new ProtoParquetWriter<MessageOrBuilder>(file, cls);
+    ParquetWriter<MessageOrBuilder> writer =
+      ProtoParquetWriter.<MessageOrBuilder>builder(file).withMessage(cls).build();
 
     for (MessageOrBuilder record : records) {
       writer.write(record);

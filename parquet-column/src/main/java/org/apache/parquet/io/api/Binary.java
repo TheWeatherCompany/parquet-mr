@@ -73,6 +73,7 @@ abstract public class Binary implements Comparable<Binary>, Serializable {
    * might not be correct. The {@link java.util.Comparator} implementation for the related type available at
    * {@link org.apache.parquet.schema.PrimitiveType#comparator} should be used instead.
    */
+  @Override
   @Deprecated
   abstract public int compareTo(Binary other);
 
@@ -232,12 +233,7 @@ abstract public class Binary implements Comparable<Binary>, Serializable {
     }
 
     private static final ThreadLocal<CharsetEncoder> ENCODER =
-      new ThreadLocal<CharsetEncoder>() {
-        @Override
-        protected CharsetEncoder initialValue() {
-          return StandardCharsets.UTF_8.newEncoder();
-        }
-      };
+      ThreadLocal.withInitial(StandardCharsets.UTF_8::newEncoder);
 
     private static ByteBuffer encodeUTF8(CharSequence value) {
       try {

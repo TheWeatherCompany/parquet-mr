@@ -20,14 +20,16 @@ package org.apache.parquet.hadoop;
 
 import static java.lang.Math.max;
 import static java.lang.Math.min;
-import static org.apache.parquet.Preconditions.checkNotNull;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import org.apache.parquet.column.ColumnWriteStore;
 import org.apache.parquet.column.ParquetProperties;
+import org.apache.parquet.column.values.bloomfilter.BloomFilterWriteStore;
+import org.apache.parquet.crypto.InternalFileEncryptor;
 import org.apache.parquet.hadoop.CodecFactory.BytesCompressor;
 import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.hadoop.api.WriteSupport.FinalizedWriteContext;
@@ -41,9 +43,6 @@ import org.slf4j.LoggerFactory;
 
 public class InternalParquetRecordWriter<T> {
   private static final Logger LOG = LoggerFactory.getLogger(InternalParquetRecordWriter.class);
-
-  private static final int MINIMUM_RECORD_COUNT_FOR_CHECK = 100;
-  private static final int MAXIMUM_RECORD_COUNT_FOR_CHECK = 10000;
 
   private final ParquetFileWriter parquetFileWriter;
   private final WriteSupport<T> writeSupport;
@@ -59,12 +58,16 @@ public class InternalParquetRecordWriter<T> {
   private boolean closed;
 
   private long recordCount = 0;
-  private long recordCountForNextMemCheck = MINIMUM_RECORD_COUNT_FOR_CHECK;
+  private long recordCountForNextMemCheck;
   private long lastRowGroupEndPos = 0;
 
   private ColumnWriteStore columnStore;
   private ColumnChunkPageWriteStore pageStore;
+  private BloomFilterWriteStore bloomFilterWriteStore;
   private RecordConsumer recordConsumer;
+  
+  private InternalFileEncryptor fileEncryptor;
+  private int rowGroupOrdinal;
 
   /**
    * @param parquetFileWriter the file to write to
@@ -84,7 +87,7 @@ public class InternalParquetRecordWriter<T> {
       boolean validating,
       ParquetProperties props) {
     this.parquetFileWriter = parquetFileWriter;
-    this.writeSupport = checkNotNull(writeSupport, "writeSupport");
+    this.writeSupport = Objects.requireNonNull(writeSupport, "writeSupport cannot be null");
     this.schema = schema;
     this.extraMetaData = extraMetaData;
     this.rowGroupSize = rowGroupSize;
@@ -93,7 +96,10 @@ public class InternalParquetRecordWriter<T> {
     this.compressor = compressor;
     this.validating = validating;
     this.props = props;
+    this.fileEncryptor = parquetFileWriter.getEncryptor();
+    this.rowGroupOrdinal = 0;
     initStore();
+    recordCountForNextMemCheck = props.getMinRowCountForPageSizeCheck();
   }
 
   public ParquetMetadata getFooter() {
@@ -101,9 +107,13 @@ public class InternalParquetRecordWriter<T> {
   }
 
   private void initStore() {
-    pageStore = new ColumnChunkPageWriteStore(compressor, schema, props.getAllocator(),
-        props.getColumnIndexTruncateLength());
-    columnStore = props.newColumnWriteStore(schema, pageStore);
+    ColumnChunkPageWriteStore columnChunkPageWriteStore = new ColumnChunkPageWriteStore(compressor,
+        schema, props.getAllocator(), props.getColumnIndexTruncateLength(), props.getPageWriteChecksumEnabled(),
+        fileEncryptor, rowGroupOrdinal);
+    pageStore = columnChunkPageWriteStore;
+    bloomFilterWriteStore = columnChunkPageWriteStore;
+
+    columnStore = props.newColumnWriteStore(schema, pageStore, bloomFilterWriteStore);
     MessageColumnIO columnIO = new ColumnIOFactory(validating).getColumnIO(schema);
     this.recordConsumer = columnIO.getRecordWriter(columnStore);
     writeSupport.prepareForWrite(recordConsumer);
@@ -177,12 +187,14 @@ public class InternalParquetRecordWriter<T> {
         LOG.debug("mem size {} > {}: flushing {} records to disk.", memSize, nextRowGroupSize, recordCount);
         flushRowGroupToStore();
         initStore();
-        recordCountForNextMemCheck = min(max(MINIMUM_RECORD_COUNT_FOR_CHECK, recordCount / 2), MAXIMUM_RECORD_COUNT_FOR_CHECK);
+        recordCountForNextMemCheck = min(max(props.getMinRowCountForPageSizeCheck(), recordCount / 2),
+          props.getMaxRowCountForPageSizeCheck());
         this.lastRowGroupEndPos = parquetFileWriter.getPos();
       } else {
         recordCountForNextMemCheck = min(
-            max(MINIMUM_RECORD_COUNT_FOR_CHECK, (recordCount + (long)(nextRowGroupSize / ((float)recordSize))) / 2), // will check halfway
-            recordCount + MAXIMUM_RECORD_COUNT_FOR_CHECK // will not look more than max records ahead
+            max(props.getMinRowCountForPageSizeCheck(),
+              (recordCount + (long)(nextRowGroupSize / ((float)recordSize))) / 2), // will check halfway
+            recordCount + props.getMaxRowCountForPageSizeCheck() // will not look more than max records ahead
             );
         LOG.debug("Checked mem at {} will check again at: {}", recordCount, recordCountForNextMemCheck);
       }
@@ -198,6 +210,7 @@ public class InternalParquetRecordWriter<T> {
     }
 
     if (recordCount > 0) {
+      rowGroupOrdinal++;
       parquetFileWriter.startBlock(recordCount);
       columnStore.flush();
       pageStore.flushToFileWriter(parquetFileWriter);

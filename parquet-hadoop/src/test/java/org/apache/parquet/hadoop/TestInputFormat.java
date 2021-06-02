@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -42,6 +42,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.SystemUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
@@ -391,23 +392,20 @@ public class TestInputFormat {
     tempDir.deleteOnExit();
     int numFiles = 10; // create a nontrivial number of files so that it actually tests getFooters() returns files in the correct order
 
-    String url = "";
+    Path[] paths = new Path[numFiles];
     for (int i = 0; i < numFiles; i++) {
       File file = new File(tempDir, String.format("part-%05d.parquet", i));
       createParquetFile(file);
-      if (i > 0) {
-        url += ",";
-      }
-      url += "file:" + file.getAbsolutePath();
+      paths[i] = new Path(file.toURI());
     }
 
     Job job = new Job();
-    FileInputFormat.setInputPaths(job, url);
+    FileInputFormat.setInputPaths(job, paths);
     List<Footer> footers = new ParquetInputFormat<Object>().getFooters(job);
     for (int i = 0; i < numFiles; i++) {
       Footer footer = footers.get(i);
       File file = new File(tempDir, String.format("part-%05d.parquet", i));
-      assertEquals("file:" + file.getAbsolutePath(), footer.getFile().toString());
+      assertEquals(file.toURI().toString(), footer.getFile().toString());
     }
   }
 

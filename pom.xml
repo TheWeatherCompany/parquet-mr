@@ -4,12 +4,12 @@
   <parent>
     <groupId>org.apache</groupId>
     <artifactId>apache</artifactId>
-    <version>16</version>
+    <version>23</version>
   </parent>
 
   <groupId>org.apache.parquet</groupId>
   <artifactId>parquet</artifactId>
-  <version>1.12.0-SNAPSHOT</version>
+  <version>1.13.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Apache Parquet MR</name>
@@ -67,54 +67,56 @@
   </developers>
 
   <properties>
-    <targetJavaVersion>1.8</targetJavaVersion>
     <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>${targetJavaVersion}</maven.compiler.target>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.target>1.8</maven.compiler.target>
     <github.global.server>github</github.global.server>
-    <maven-jar-plugin.version>2.4</maven-jar-plugin.version>
-    <jackson.groupId>org.codehaus.jackson</jackson.groupId>
-    <jackson.version>1.9.13</jackson.version>
-    <jackson.package>org.codehaus.jackson</jackson.package>
+    <jackson.groupId>com.fasterxml.jackson.core</jackson.groupId>
+    <jackson.package>com.fasterxml.jackson</jackson.package>
+    <jackson.version>2.12.2</jackson.version>
+    <jackson-databind.version>${jackson.version}</jackson-databind.version>
+    <japicmp.version>0.14.2</japicmp.version>
     <shade.prefix>shaded.parquet</shade.prefix>
-    <hadoop.version>2.7.3</hadoop.version>
-    <hadoop1.version>1.2.1</hadoop1.version>
+    <hadoop.version>2.10.1</hadoop.version>
     <cascading.version>2.7.1</cascading.version>
     <cascading3.version>3.1.2</cascading3.version>
-    <parquet.format.version>2.6.0</parquet.format.version>
-    <previous.version>1.7.0</previous.version>
+    <parquet.format.version>2.9.0</parquet.format.version>
+    <previous.version>1.12.0</previous.version>
     <thrift.executable>thrift</thrift.executable>
-    <format.thrift.executable>thrift</format.thrift.executable>
-    <scala.version>2.10.6</scala.version>
+    <format.thrift.executable>${thrift.executable}</format.thrift.executable>
+    <scala.version>2.12.8</scala.version>
     <!-- scala.binary.version is used for projects that fetch dependencies that are in scala -->
-    <scala.binary.version>2.10</scala.binary.version>
+    <scala.binary.version>2.12</scala.binary.version>
     <scala.maven.test.skip>false</scala.maven.test.skip>
     <pig.version>0.16.0</pig.version>
     <pig.classifier>h2</pig.classifier>
     <thrift-maven-plugin.version>0.10.0</thrift-maven-plugin.version>
-    <thrift.version>0.12.0</thrift.version>
-    <format.thrift.version>0.12.0</format.thrift.version>
-    <fastutil.version>7.0.13</fastutil.version>
+    <thrift.version>0.14.1</thrift.version>
+    <format.thrift.version>${thrift.version}</format.thrift.version>
+    <fastutil.version>8.4.2</fastutil.version>
     <semver.api.version>0.9.33</semver.api.version>
     <slf4j.version>1.7.22</slf4j.version>
-    <avro.version>1.8.2</avro.version>
+    <avro.version>1.10.2</avro.version>
     <guava.version>27.0.1-jre</guava.version>
     <brotli-codec.version>0.1.1</brotli-codec.version>
     <mockito.version>1.10.19</mockito.version>
+    <net.openhft.version>0.9</net.openhft.version>
+    <exec-maven-plugin.version>1.6.0</exec-maven-plugin.version>
 
     <!-- parquet-cli dependencies -->
     <opencsv.version>2.3</opencsv.version>
-    <jackson2.version>2.9.8</jackson2.version>
-    <jcommander.version>1.35</jcommander.version>
-    <commons-codec.version>1.10</commons-codec.version>
+    <jcommander.version>1.72</jcommander.version>
+    <zstd-jni.version>1.4.9-1</zstd-jni.version>
+    <commons-text.version>1.8</commons-text.version>
+
+    <!-- properties for the profiles -->
+    <surefire.argLine>-Xmx512m</surefire.argLine>
+    <surefire.logLevel>INFO</surefire.logLevel>
   </properties>
 
   <modules>
     <module>parquet-arrow</module>
     <module>parquet-avro</module>
     <module>parquet-benchmarks</module>
-    <module>parquet-cascading</module>
-    <module>parquet-cascading3</module>
     <module>parquet-cli</module>
     <module>parquet-column</module>
     <module>parquet-common</module>
@@ -127,32 +129,21 @@
     <module>parquet-pig-bundle</module>
     <module>parquet-protobuf</module>
     <module>parquet-scala</module>
-    <module>parquet-scrooge</module>
     <module>parquet-thrift</module>
     <module>parquet-hadoop-bundle</module>
-    <module>parquet-hive</module>
-    <module>parquet-hive-bundle</module>
-    <module>parquet-tools</module>
   </modules>
 
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.12</version>
+      <version>4.13.1</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.easymock</groupId>
       <artifactId>easymock</artifactId>
       <version>3.4</version>
-      <scope>test</scope>
-    </dependency>
-    <!-- hadoop-1 requires the old httpclient for testing -->
-    <dependency>
-      <groupId>commons-httpclient</groupId>
-      <artifactId>commons-httpclient</artifactId>
-      <version>3.1</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -162,7 +153,6 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
-        <version>2.9</version>
         <reportSets>
           <reportSet><!-- by default, id = "default" -->
             <reports><!-- select non-aggregate reports -->
@@ -182,6 +172,8 @@
           <sourceFileExcludes>
             <sourceFileExclude>**/generated-sources/**/*.java</sourceFileExclude>
           </sourceFileExcludes>
+          <source>8</source>
+          <quiet>true</quiet>
         </configuration>
       </plugin>
       <plugin>
@@ -223,66 +215,8 @@
         </plugin>
 
         <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-resources-plugin</artifactId>
-          <version>2.7</version>
-        </plugin>
-
-        <plugin>
           <artifactId>maven-enforcer-plugin</artifactId>
-          <version>1.3.1</version>
-          <dependencies>
-            <dependency>
-              <groupId>org.semver</groupId>
-              <artifactId>enforcer-rule</artifactId>
-              <version>0.9.33</version>
-            </dependency>
-         </dependencies>
          <executions>
-           <execution>
-             <id>check</id>
-             <phase>verify</phase>
-             <goals>
-               <goal>enforce</goal>
-             </goals>
-             <configuration>
-               <rules>
-                 <requireBackwardCompatibility implementation="org.semver.enforcer.RequireSemanticVersioningConformance">
-                   <dumpDetails>true</dumpDetails>
-                   <previousVersion>${previous.version}</previousVersion>
-                   <excludes>
-                     <exclude>org/apache/parquet/hadoop/util/**</exclude>
-                     <exclude>org/apache/parquet/thrift/projection/**</exclude>
-                     <exclude>org/apache/parquet/thrift/ThriftSchemaConverter</exclude>
-                     <exclude>org/apache/parquet/filter2/**</exclude>
-                     <exclude>org/apache/parquet/column/**</exclude>
-                     <exclude>org/apache/parquet/hadoop/ParquetInputSplit</exclude>
-                     <exclude>org/apache/parquet/hadoop/CodecFactory**</exclude>
-                     <exclude>shaded/**</exclude> <!-- shaded by parquet -->
-                     <exclude>org/apache/parquet/it/unimi/dsi/fastutil/**</exclude> <!-- Another shaded dependency from parquet-column -->
-                     <exclude>org/apache/parquet/benchmarks/**</exclude>
-                     <exclude>org/openjdk/**</exclude>
-                     <!-- temporary exclusions for false-positives -->
-                     <exclude>org/apache/parquet/Version</exclude>
-                     <exclude>org/apache/parquet/schema/**</exclude> <!-- methods moved to new superclass -->
-                     <exclude>org/apache/parquet/thrift/ThriftSchemaConvertVisitor</exclude> <!-- not public -->
-                     <exclude>org/apache/parquet/avro/AvroParquetReader</exclude> <!-- returns subclass of old return class -->
-                     <exclude>org/apache/parquet/avro/SpecificDataSupplier</exclude> <!-- made public -->
-                     <exclude>org/apache/parquet/io/ColumnIOFactory$ColumnIOCreatorVisitor</exclude> <!-- removed non-API class -->
-                     <exclude>org/apache/parquet/io/ColumnIOFactory/**</exclude> <!-- removed non-API class and methods-->
-                     <exclude>org/apache/parquet/hadoop/codec/SnappyCompressor</exclude> <!-- added synchronized modifier -->
-                     <exclude>org/apache/parquet/bytes/BytesInput</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/bytes/CapacityByteArrayOutputStream</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/bytes/ConcatenatingByteArrayCollector</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/bytes/LittleEndianDataInputStream</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/bytes/LittleEndianDataOutputStream</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/hadoop/metadata/CompressionCodecName</exclude> <!-- moved to parquet-common -->
-                     <exclude>org/apache/parquet/hadoop/codec/CompressionCodecNotSupportedException</exclude> <!-- moved to parquet-common -->
-                   </excludes>
-                 </requireBackwardCompatibility>
-               </rules>
-             </configuration>
-           </execution>
            <execution>
             <id>enforce-banned-dependencies</id>
             <goals>
@@ -292,7 +226,7 @@
               <rules>
                 <bannedDependencies>
                   <excludes>
-                    <exclude>org.slf4j:slf4j-log4j12</exclude>
+                    <exclude>org.slf4j:slf4j-log4j12:*:*:compile</exclude>
                   </excludes>
                 </bannedDependencies>
               </rules>
@@ -304,7 +238,6 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-shade-plugin</artifactId>
-          <version>3.0.0</version>
           <executions>
             <execution>
               <phase>package</phase>
@@ -317,6 +250,7 @@
                   <includes>
                     <include>${jackson.groupId}:*</include>
                     <include>it.unimi.dsi:fastutil</include>
+                    <include>net.openhft:*</include>
                   </includes>
                 </artifactSet>
                 <!-- Shade jackson but do not include any class. Let parquet-jackson handle this -->
@@ -337,6 +271,10 @@
                     <pattern>it.unimi.dsi</pattern>
                     <shadedPattern>${shade.prefix}.it.unimi.dsi</shadedPattern>
                   </relocation>
+                  <relocation>
+                    <pattern>net.openhft</pattern>
+                    <shadedPattern>${shade.prefix}.net.openhft</shadedPattern>
+                  </relocation>
                 </relocations>
               </configuration>
             </execution>
@@ -345,7 +283,6 @@
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-jar-plugin</artifactId>
-          <version>${maven-jar-plugin.version}</version>
           <configuration>
             <archive>
               <manifestEntries>
@@ -364,6 +301,17 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <configuration>
+          <sourceFileExcludes>
+            <sourceFileExclude>**/generated-sources/**/*.java</sourceFileExclude>
+          </sourceFileExcludes>
+          <source>8</source>
+          <quiet>true</quiet>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>com.mycila.maven-license-plugin</groupId>
         <artifactId>maven-license-plugin</artifactId>
@@ -384,19 +332,11 @@
 
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-resources-plugin</artifactId>
-        <version>2.7</version>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-remote-resources-plugin</artifactId>
-          <version>1.5</version>
           <configuration>
             <skip>true</skip>
           </configuration>
       </plugin>
-
 
       <plugin>
         <!-- Override source and target from the ASF parent -->
@@ -408,10 +348,10 @@
           <target>${maven.compiler.target}</target>
         </configuration>
       </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <version>2.10</version>
         <executions>
           <execution>
             <goals>
@@ -421,27 +361,31 @@
           </execution>
         </executions>
       </plugin>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.10</version>
         <configuration>
-          <argLine>-Xmx512m</argLine>
+          <argLine>${surefire.argLine}</argLine>
           <systemPropertyVariables>
             <!-- Configure Parquet logging during tests
                  See http://www.slf4j.org/api/org/slf4j/impl/SimpleLogger.html
                  -->
-            <org.slf4j.simpleLogger.defaultLogLevel>info</org.slf4j.simpleLogger.defaultLogLevel>
+            <org.slf4j.simpleLogger.defaultLogLevel>${surefire.logLevel}</org.slf4j.simpleLogger.defaultLogLevel>
             <org.slf4j.simpleLogger.showDateTime>true</org.slf4j.simpleLogger.showDateTime>
             <org.slf4j.simpleLogger.dateTimeFormat>YYYY-MM-dd HH:mm:ss</org.slf4j.simpleLogger.dateTimeFormat>
             <org.slf4j.simpleLogger.showThreadName>false</org.slf4j.simpleLogger.showThreadName>
             <org.slf4j.simpleLogger.showShortLogName>true</org.slf4j.simpleLogger.showShortLogName>
+
+            <!-- Configure log level for Hadoop -->
+            <hadoop.logLevel>${surefire.logLevel}</hadoop.logLevel>
           </systemPropertyVariables>
           <excludes>
             <exclude>**/benchmark/*.java</exclude>
           </excludes>
         </configuration>
       </plugin>
+
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>buildnumber-maven-plugin</artifactId>
@@ -455,10 +399,10 @@
          </execution>
        </executions>
       </plugin>
+
       <plugin>
         <groupId>org.apache.rat</groupId>
         <artifactId>apache-rat-plugin</artifactId>
-        <version>0.12</version>
         <executions>
           <execution>
             <phase>test</phase>
@@ -470,6 +414,7 @@
         <configuration>
           <consoleOutput>true</consoleOutput>
           <excludes>
+            <exclude>.github/PULL_REQUEST_TEMPLATE.md</exclude>
             <exclude>**/*.parquet</exclude>
             <exclude>**/*.avro</exclude>
             <exclude>**/*.json</exclude>
@@ -485,9 +430,9 @@
             <exclude>**/target/**</exclude>
             <exclude>.git/**</exclude>
             <exclude>.gitignore</exclude>
+            <exclude>.gitmodules</exclude>
             <exclude>.idea/**</exclude>
             <exclude>*/jdiff/*.xml</exclude>
-            <exclude>.travis.yml</exclude>
             <exclude>licenses/**</exclude>
             <exclude>protobuf_install/**</exclude>
             <exclude>thrift-${thrift.version}/**</exclude>
@@ -495,6 +440,56 @@
             <exclude>**/dependency-reduced-pom.xml</exclude>
           </excludes>
         </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>com.github.siom79.japicmp</groupId>
+        <artifactId>japicmp-maven-plugin</artifactId>
+        <version>${japicmp.version}</version>
+        <configuration>
+          <parameter>
+            <oldVersionPattern>${previous.version}</oldVersionPattern>
+            <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+            <onlyModified>true</onlyModified>
+            <overrideCompatibilityChangeParameters>
+              <!-- Adding a new method with default implementation to an interface should be a compatible change.
+                That's why they invented it. -->
+              <overrideCompatibilityChangeParameter>
+                <compatibilityChange>METHOD_NEW_DEFAULT</compatibilityChange>
+                <semanticVersionLevel>MINOR</semanticVersionLevel>
+                <binaryCompatible>true</binaryCompatible>
+                <sourceCompatible>true</sourceCompatible>
+              </overrideCompatibilityChangeParameter>
+            </overrideCompatibilityChangeParameters>
+            <excludeModules>
+              <!-- Excluding the following modules because they are not part of the parquet public API -->
+              <excludeModule>parquet-benchmarks</excludeModule>
+              <excludeModule>parquet-cli</excludeModule>
+              <excludeModule>parquet-tools-deprecated</excludeModule>
+              <excludeModule>parquet-format-structures</excludeModule>
+
+              <!-- Excluding the following modules because bundles do not contain any java classes while they still fail the
+                compatibility check because of missing dependencies -->
+              <excludeModule>parquet-hadoop-bundle</excludeModule>
+              <excludeModule>parquet-pig-bundle</excludeModule>
+            </excludeModules>
+            <excludes>
+              <exclude>${shade.prefix}</exclude>
+              <!-- In PARQUET-2052 this field is changed from int to long which is a minor API
+                change to fix a integer overflow issue.
+                TODO: remove this after Parquet 1.13 release -->
+              <exclude>org.apache.parquet.column.values.dictionary.DictionaryValuesWriter#dictionaryByteSize</exclude>
+            </excludes>
+          </parameter>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>cmp</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
@@ -507,7 +502,6 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-project-info-reports-plugin</artifactId>
-            <version>2.7</version>
             <reportSets>
               <reportSet>
                 <reports>
@@ -536,7 +530,6 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-site-plugin</artifactId>
-            <version>3.3</version>
             <configuration>
               <skipDeploy>true</skipDeploy>
             </configuration>
@@ -564,26 +557,31 @@
       </build>
     </profile>
 
+    <!-- Profile for CI tests to have less output -->
     <profile>
-      <id>hadoop-1</id>
-      <activation>
-        <property>
-          <name>hadoop.profile</name>
-          <value>hadoop1</value>
-        </property>
-      </activation>
+      <id>ci-test</id>
       <properties>
-        <!-- test hadoop-1 with the same jars that were produced for default profile -->
-        <maven.main.skip>true</maven.main.skip>
-        <hadoop.version>${hadoop1.version}</hadoop.version>
-        <pig.classifier />
+        <surefire.logLevel>WARN</surefire.logLevel>
+        <surefire.argLine>-Xmx512m -XX:MaxJavaStackTraceDepth=10</surefire.argLine>
       </properties>
     </profile>
+
     <profile>
-      <id>thrift9</id>
-      <properties>
-        <thrift.version>0.9.0</thrift.version>
-      </properties>
+      <id>jdk9+</id>
+      <activation>
+        <jdk>[1.9,)</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <release>8</release>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 </project>

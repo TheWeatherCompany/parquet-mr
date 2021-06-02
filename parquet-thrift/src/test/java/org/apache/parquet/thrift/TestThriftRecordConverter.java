@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -19,12 +19,11 @@
 package org.apache.parquet.thrift;
 
 import java.io.File;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-import org.apache.parquet.Files;
-import org.apache.parquet.Strings;
 import org.apache.parquet.io.ParquetDecodingException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.thrift.ThriftRecordConverter.FieldEnumConverter;
@@ -61,7 +60,7 @@ public class TestThriftRecordConverter {
       conv.addBinary(Binary.fromString("FAKE_ENUM_VALUE"));
       fail("this should throw");
     } catch (ParquetDecodingException e) {
-      assertEquals("Unrecognized enum value: FAKE_ENUM_VALUE known values: {Binary{\"hello\"}=77} in {\n" +
+      assertEquals(("Unrecognized enum value: FAKE_ENUM_VALUE known values: {Binary{\"hello\"}=77} in {\n" +
           "  \"name\" : \"name\",\n" +
           "  \"fieldId\" : 1,\n" +
           "  \"requirement\" : \"REQUIRED\",\n" +
@@ -70,18 +69,19 @@ public class TestThriftRecordConverter {
           "    \"values\" : [ {\n" +
           "      \"id\" : 77,\n" +
           "      \"name\" : \"hello\"\n" +
-          "    } ]\n" +
+          "    } ],\n" +
+          "    \"logicalTypeAnnotation\" : null\n" +
           "  }\n" +
-          "}", e.getMessage());
+          "}").replace("\n", System.lineSeparator()), e.getMessage());
     }
   }
 
   @Test
   public void constructorDoesNotRequireStructOrUnionTypeMeta() throws Exception {
-    String jsonWithNoStructOrUnionMeta = Strings.join(
+    String jsonWithNoStructOrUnionMeta = String.join("\n",
         Files.readAllLines(
-            new File("src/test/resources/org/apache/parquet/thrift/StructWithUnionV1NoStructOrUnionMeta.json"),
-            Charset.forName("UTF-8")), "\n");
+            new File("src/test/resources/org/apache/parquet/thrift/StructWithUnionV1NoStructOrUnionMeta.json").toPath(),
+            StandardCharsets.UTF_8));
 
     StructType noStructOrUnionMeta  = (StructType) ThriftType.fromJSON(jsonWithNoStructOrUnionMeta);
 

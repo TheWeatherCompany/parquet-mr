@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -30,6 +30,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import com.twitter.elephantbird.thrift.test.TestMapInList;
+import com.twitter.elephantbird.thrift.test.TestNameSet;
+import org.apache.hadoop.conf.Configuration;
 import org.junit.ComparisonFailure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,8 +51,6 @@ import org.apache.parquet.io.RecordConsumerLoggingWrapper;
 import org.apache.parquet.pig.PigSchemaConverter;
 import org.apache.parquet.pig.TupleWriteSupport;
 import org.apache.parquet.schema.MessageType;
-import org.apache.parquet.thrift.ParquetWriteProtocol;
-import org.apache.parquet.thrift.ThriftSchemaConverter;
 import org.apache.parquet.thrift.struct.ThriftType.StructType;
 
 import com.twitter.data.proto.tutorial.thrift.AddressBook;
@@ -78,7 +79,7 @@ public class TestParquetWriteProtocol {
          "endField(name, 0)",
          "startField(names, 1)",
           "startGroup()",
-           "startField(map, 0)",
+           "startField(key_value, 0)",
             "startGroup()",
              "startField(key, 0)",
               "addBinary(foo)",
@@ -95,7 +96,7 @@ public class TestParquetWriteProtocol {
               "addBinary(bar2)",
              "endField(value, 1)",
             "endGroup()",
-           "endField(map, 0)",
+           "endField(key_value, 0)",
           "endGroup()",
          "endField(names, 1)",
         "endMessage()"
@@ -107,7 +108,7 @@ public class TestParquetWriteProtocol {
          "endField(name, 0)",
          "startField(names, 1)",
           "startGroup()",
-           "startField(map, 0)",
+           "startField(key_value, 0)",
             "startGroup()",
              "startField(key, 0)",
               "addBinary(foo2)",
@@ -124,7 +125,7 @@ public class TestParquetWriteProtocol {
               "addBinary(bar)",
              "endField(value, 1)",
             "endGroup()",
-           "endField(map, 0)",
+           "endField(key_value, 0)",
           "endGroup()",
          "endField(names, 1)",
         "endMessage()"
@@ -163,7 +164,7 @@ public class TestParquetWriteProtocol {
             "startGroup()",
              "startField(names_tuple, 0)", // map: optional field
               "startGroup()",
-               "startField(map, 0)", // repeated field
+               "startField(key_value, 0)", // repeated field
                 "startGroup()",
                  "startField(key, 0)", // key
                   "addBinary(foo)",
@@ -172,7 +173,7 @@ public class TestParquetWriteProtocol {
                   "addBinary(bar)",
                  "endField(value, 1)",
                 "endGroup()",
-               "endField(map, 0)",
+               "endField(key_value, 0)",
               "endGroup()",
              "endField(names_tuple, 0)",
             "endGroup()",
@@ -198,7 +199,7 @@ public class TestParquetWriteProtocol {
           "startGroup()",
            "startField(names_tuple, 0)", // map: optional field
             "startGroup()",
-             "startField(map, 0)", // repeated field
+             "startField(key_value, 0)", // repeated field
               "startGroup()",
                "startField(key, 0)", // key
                 "addBinary(foo)",
@@ -207,7 +208,7 @@ public class TestParquetWriteProtocol {
                 "addBinary(bar)",
                "endField(value, 1)",
               "endGroup()",
-             "endField(map, 0)",
+             "endField(key_value, 0)",
             "endGroup()",
            "endField(names_tuple, 0)",
           "endGroup()",
@@ -278,7 +279,7 @@ public class TestParquetWriteProtocol {
           "endField(name, 0)",
           "startField(names, 1)",
             "startGroup()",
-              "startField(map, 0)",
+              "startField(key_value, 0)",
                 "startGroup()",
                   "startField(key, 0)",
                     "addBinary(foo)",
@@ -302,12 +303,12 @@ public class TestParquetWriteProtocol {
                     "endGroup()",
                   "endField(value, 1)",
                 "endGroup()",
-              "endField(map, 0)",
+              "endField(key_value, 0)",
             "endGroup()",
           "endField(names, 1)",
           "startField(name_to_id, 2)",
             "startGroup()",
-              "startField(map, 0)",
+              "startField(key_value, 0)",
                 "startGroup()",
                   "startField(key, 0)",
                     "addBinary(bar)",
@@ -316,7 +317,7 @@ public class TestParquetWriteProtocol {
                     "addInt(10)",
                   "endField(value, 1)",
                 "endGroup()",
-              "endField(map, 0)",
+              "endField(key_value, 0)",
             "endGroup()",
           "endField(name_to_id, 2)",
         "endMessage()"
@@ -518,9 +519,175 @@ public class TestParquetWriteProtocol {
    validateThrift(thriftExpectations, a);
   }
 
+  @Test
+  public void testSetWithTwoLevelList() throws TException {
+    final Set<String> names = new HashSet<String>();
+    names.add("John");
+    names.add("Jack");
+    final TestNameSet o = new TestNameSet("name", names);
+
+    String[] expectations = {
+      "startMessage()",
+        "startField(name, 0)",
+          "addBinary(name)",
+        "endField(name, 0)",
+        "startField(names, 1)",
+          "startGroup()",
+            "startField(names_tuple, 0)",
+              "addBinary(John)",
+              "addBinary(Jack)",
+            "endField(names_tuple, 0)",
+          "endGroup()",
+        "endField(names, 1)",
+      "endMessage()"};
+    Configuration conf = new Configuration();
+    conf.set(ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS, "false");
+    validateThrift(conf, expectations, o);
+  }
+
+  @Test
+  public void testSetWithThreeLevelList() throws TException {
+    final Set<String> names = new HashSet<String>();
+    names.add("John");
+    names.add("Jack");
+    final TestNameSet o = new TestNameSet("name", names);
+
+    String[] expectations = {
+      "startMessage()",
+        "startField(name, 0)",
+          "addBinary(name)",
+        "endField(name, 0)",
+        "startField(names, 1)",
+          "startGroup()",
+            "startField(list, 0)",
+              "startGroup()",
+                "startField(element, 0)",
+                  "addBinary(John)",
+                "endField(element, 0)",
+              "endGroup()",
+              "startGroup()",
+                "startField(element, 0)",
+                  "addBinary(Jack)",
+                "endField(element, 0)",
+              "endGroup()",
+            "endField(list, 0)",
+          "endGroup()",
+        "endField(names, 1)",
+      "endMessage()"};
+    Configuration conf = new Configuration();
+    conf.set(ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS, "true");
+    validateThrift(conf, expectations, o);
+  }
+
+  @Test
+  public void testNameThreeLevelList() throws TException {
+    final List<String> names = new ArrayList<String>();
+    names.add("John");
+    names.add("Jack");
+    final TestNameList o = new TestNameList("name", names);
+
+    String[] expectations = {
+        "startMessage()",
+          "startField(name, 0)",
+            "addBinary(name)",
+          "endField(name, 0)",
+          "startField(names, 1)",
+            "startGroup()",
+              "startField(list, 0)",
+                "startGroup()",
+                  "startField(element, 0)",
+                    "addBinary(John)",
+                  "endField(element, 0)",
+                "endGroup()",
+                "startGroup()",
+                  "startField(element, 0)",
+                    "addBinary(Jack)",
+                  "endField(element, 0)",
+                "endGroup()",
+              "endField(list, 0)",
+            "endGroup()",
+          "endField(names, 1)",
+        "endMessage()"};
+    Configuration conf = new Configuration();
+    conf.set(ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS, "true");
+    validateThrift(conf, expectations, o);
+  }
+
+  @Test
+  public void testListOfMapThreeLevelList() throws TException {
+    Map<String, String> map1 = new HashMap<String,String>();
+    map1.put("key11", "value11");
+    map1.put("key12", "value12");
+    Map<String, String> map2 = new HashMap<String,String>();
+    map2.put("key21", "value21");
+    final TestMapInList listMap = new TestMapInList("listmap",
+        Arrays.asList(map1, map2));
+
+    String[] expectations = {
+        "startMessage()",
+          "startField(name, 0)",
+            "addBinary(listmap)",
+          "endField(name, 0)",
+          "startField(names, 1)",
+            "startGroup()",
+              "startField(list, 0)",
+                "startGroup()",
+                  "startField(element, 0)",
+                    "startGroup()",
+                      "startField(key_value, 0)",
+                        "startGroup()",
+                          "startField(key, 0)",
+                            "addBinary(key12)",
+                          "endField(key, 0)",
+                          "startField(value, 1)",
+                            "addBinary(value12)",
+                          "endField(value, 1)",
+                        "endGroup()",
+                        "startGroup()",
+                          "startField(key, 0)",
+                            "addBinary(key11)",
+                          "endField(key, 0)",
+                          "startField(value, 1)",
+                            "addBinary(value11)",
+                          "endField(value, 1)",
+                        "endGroup()",
+                      "endField(key_value, 0)",
+                    "endGroup()",
+                  "endField(element, 0)",
+                "endGroup()",
+                "startGroup()",
+                  "startField(element, 0)",
+                    "startGroup()",
+                      "startField(key_value, 0)",
+                        "startGroup()",
+                          "startField(key, 0)",
+                            "addBinary(key21)",
+                          "endField(key, 0)",
+                          "startField(value, 1)",
+                            "addBinary(value21)",
+                          "endField(value, 1)",
+                        "endGroup()",
+                      "endField(key_value, 0)",
+                    "endGroup()",
+                  "endField(element, 0)",
+                "endGroup()",
+              "endField(list, 0)",
+            "endGroup()",
+          "endField(names, 1)",
+        "endMessage()"};
+    Configuration conf = new Configuration();
+    conf.set(ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS, "true");
+    validateThrift(conf, expectations, listMap);
+  }
+
   private void validateThrift(String[] expectations, TBase<?, ?> a)
       throws TException {
-    final ThriftSchemaConverter thriftSchemaConverter = new ThriftSchemaConverter();
+    validateThrift(new Configuration(), expectations, a);
+  }
+
+  private void validateThrift(Configuration configuration, String[] expectations, TBase<?, ?> a)
+      throws TException {
+    final ThriftSchemaConverter thriftSchemaConverter = new ThriftSchemaConverter(configuration);
 //      System.out.println(a);
     final Class<TBase<?,?>> class1 = (Class<TBase<?,?>>)a.getClass();
     final MessageType schema = thriftSchemaConverter.convert(class1);
@@ -528,7 +695,8 @@ public class TestParquetWriteProtocol {
     final StructType structType = thriftSchemaConverter.toStructType(class1);
     ExpectationValidatingRecordConsumer recordConsumer = new ExpectationValidatingRecordConsumer(new ArrayDeque<String>(Arrays.asList(expectations)));
     final MessageColumnIO columnIO = new ColumnIOFactory().getColumnIO(schema);
-    ParquetWriteProtocol p = new ParquetWriteProtocol(new RecordConsumerLoggingWrapper(recordConsumer), columnIO, structType);
+    ParquetWriteProtocol p = new ParquetWriteProtocol(
+        configuration, new RecordConsumerLoggingWrapper(recordConsumer), columnIO, structType);
     a.write(p);
   }
 

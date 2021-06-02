@@ -26,6 +26,7 @@ import org.apache.hadoop.fs.Path;
 
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.column.ParquetProperties.WriterVersion;
+import org.apache.parquet.crypto.FileEncryptionProperties;
 import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
@@ -232,7 +233,7 @@ public class ParquetWriter<T> implements Closeable {
             .withDictionaryPageSize(dictionaryPageSize)
             .withDictionaryEncoding(enableDictionary)
             .withWriterVersion(writerVersion)
-            .build());
+            .build(), null);
   }
 
   /**
@@ -272,13 +273,23 @@ public class ParquetWriter<T> implements Closeable {
       boolean validating,
       Configuration conf,
       int maxPaddingSize,
-      ParquetProperties encodingProps) throws IOException {
+      ParquetProperties encodingProps,
+      FileEncryptionProperties encryptionProperties) throws IOException {
 
     WriteSupport.WriteContext writeContext = writeSupport.init(conf);
     MessageType schema = writeContext.getSchema();
 
+    // encryptionProperties could be built from the implementation of EncryptionPropertiesFactory when it is attached.
+    if (encryptionProperties == null) {
+      String path = file == null ? null : file.getPath();
+      encryptionProperties = ParquetOutputFormat.createEncryptionProperties(conf,
+          path == null ? null : new Path(path), writeContext);
+    }
+
     ParquetFileWriter fileWriter = new ParquetFileWriter(
-        file, schema, mode, rowGroupSize, maxPaddingSize, encodingProps.getColumnIndexTruncateLength());
+      file, schema, mode, rowGroupSize, maxPaddingSize,
+      encodingProps.getColumnIndexTruncateLength(), encodingProps.getStatisticsTruncateLength(),
+      encodingProps.getPageWriteChecksumEnabled(), encryptionProperties);
     fileWriter.start();
 
     this.codecFactory = new CodecFactory(conf, encodingProps.getPageSizeThreshold());
@@ -348,6 +359,7 @@ public class ParquetWriter<T> implements Closeable {
   public abstract static class Builder<T, SELF extends Builder<T, SELF>> {
     private OutputFile file = null;
     private Path path = null;
+    private FileEncryptionProperties encryptionProperties = null;
     private Configuration conf = new Configuration();
     private ParquetFileWriter.Mode mode;
     private CompressionCodecName codecName = DEFAULT_COMPRESSION_CODEC_NAME;
@@ -408,6 +420,18 @@ public class ParquetWriter<T> implements Closeable {
      */
     public SELF withCompressionCodec(CompressionCodecName codecName) {
       this.codecName = codecName;
+      return self();
+    }
+
+    /**
+     * Set the {@link FileEncryptionProperties file encryption properties} used by the
+     * constructed writer.
+     *
+     * @param encryptionProperties a {@code FileEncryptionProperties}
+     * @return this builder for method chaining.
+     */
+    public SELF withEncryption (FileEncryptionProperties encryptionProperties) {
+      this.encryptionProperties = encryptionProperties;
       return self();
     }
 
@@ -490,6 +514,23 @@ public class ParquetWriter<T> implements Closeable {
       return self();
     }
 
+    public SELF withByteStreamSplitEncoding(boolean enableByteStreamSplit) {
+      encodingPropsBuilder.withByteStreamSplitEncoding(enableByteStreamSplit);
+      return self();
+    }
+
+    /**
+     * Enable or disable dictionary encoding of the specified column for the constructed writer.
+     *
+     * @param columnPath the path of the column (dot-string)
+     * @param enableDictionary whether dictionary encoding should be enabled
+     * @return this builder for method chaining.
+     */
+    public SELF withDictionaryEncoding(String columnPath, boolean enableDictionary) {
+      encodingPropsBuilder.withDictionaryEncoding(columnPath, enableDictionary);
+      return self();
+    }
+
     /**
      * Enables validation for the constructed writer.
      *
@@ -524,6 +565,87 @@ public class ParquetWriter<T> implements Closeable {
     }
 
     /**
+     * Enables writing page level checksums for the constructed writer.
+     *
+     * @return this builder for method chaining.
+     */
+    public SELF enablePageWriteChecksum() {
+      encodingPropsBuilder.withPageWriteChecksumEnabled(true);
+      return self();
+    }
+
+    /**
+     * Enables writing page level checksums for the constructed writer.
+     *
+     * @param enablePageWriteChecksum whether page checksums should be written out
+     * @return this builder for method chaining.
+     */
+    public SELF withPageWriteChecksumEnabled(boolean enablePageWriteChecksum) {
+      encodingPropsBuilder.withPageWriteChecksumEnabled(enablePageWriteChecksum);
+      return self();
+    }
+
+    /**
+     * Sets the NDV (number of distinct values) for the specified column.
+     *
+     * @param columnPath the path of the column (dot-string)
+     * @param ndv        the NDV of the column
+     *
+     * @return this builder for method chaining.
+     */
+    public SELF withBloomFilterNDV(String columnPath, long ndv) {
+      encodingPropsBuilder.withBloomFilterNDV(columnPath, ndv);
+
+      return self();
+    }
+
+    /**
+     * Sets the bloom filter enabled/disabled
+     *
+     * @param enabled whether to write bloom filters
+     * @return this builder for method chaining
+     */
+    public SELF withBloomFilterEnabled(boolean enabled) {
+      encodingPropsBuilder.withBloomFilterEnabled(enabled);
+      return self();
+    }
+
+    /**
+     * Sets the bloom filter enabled/disabled for the specified column. If not set for the column specifically the
+     * default enabled/disabled state will take place. See {@link #withBloomFilterEnabled(boolean)}.
+     *
+     * @param columnPath the path of the column (dot-string)
+     * @param enabled    whether to write bloom filter for the column
+     * @return this builder for method chaining
+     */
+    public SELF withBloomFilterEnabled(String columnPath, boolean enabled) {
+      encodingPropsBuilder.withBloomFilterEnabled(columnPath, enabled);
+      return self();
+    }
+
+    /**
+     * Sets the minimum number of rows to write before a page size check is done.
+     *
+     * @param min writes at least `min` rows before invoking a page size check
+     * @return this builder for method chaining
+     */
+    public SELF withMinRowCountForPageSizeCheck(int min) {
+      encodingPropsBuilder.withMinRowCountForPageSizeCheck(min);
+      return self();
+    }
+
+    /**
+     * Sets the maximum number of rows to write before a page size check is done.
+     *
+     * @param max makes a page size check after `max` rows have been written
+     * @return this builder for method chaining
+     */
+    public SELF withMaxRowCountForPageSizeCheck(int max) {
+      encodingPropsBuilder.withMaxRowCountForPageSizeCheck(max);
+      return self();
+    }
+
+    /**
      * Set a property that will be available to the read path. For writers that use a Hadoop
      * configuration, this is the recommended way to add configuration values.
      *
@@ -546,12 +668,12 @@ public class ParquetWriter<T> implements Closeable {
       if (file != null) {
         return new ParquetWriter<>(file,
             mode, getWriteSupport(conf), codecName, rowGroupSize, enableValidation, conf,
-            maxPaddingSize, encodingPropsBuilder.build());
+            maxPaddingSize, encodingPropsBuilder.build(), encryptionProperties);
       } else {
         return new ParquetWriter<>(HadoopOutputFile.fromPath(path, conf),
             mode, getWriteSupport(conf), codecName,
             rowGroupSize, enableValidation, conf, maxPaddingSize,
-            encodingPropsBuilder.build());
+            encodingPropsBuilder.build(), encryptionProperties);
       }
     }
   }

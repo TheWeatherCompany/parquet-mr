@@ -46,6 +46,7 @@ import java.util.HashMap;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.column.ParquetProperties;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
@@ -112,6 +113,11 @@ public class TestColumnChunkPageWriteStore {
     @Override
     public long defaultBlockSize() {
       return file.defaultBlockSize();
+    }
+
+    @Override
+    public String getPath() {
+      return file.getPath();
     }
   }
 
@@ -257,6 +263,7 @@ public class TestColumnChunkPageWriteStore {
           eq(fakeStats),
           same(ColumnIndexBuilder.getNoOpBuilder()), // Deprecated writePage -> no column index
           same(OffsetIndexBuilder.getNoOpBuilder()), // Deprecated writePage -> no offset index
+          any(),
           any(),
           any(),
           any());

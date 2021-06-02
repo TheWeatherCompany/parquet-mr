@@ -50,6 +50,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.AccessController;
@@ -139,15 +140,37 @@ public abstract class BaseCommand implements Command, Configurable {
     return create(filename, false);
   }
 
+  /**
+   * Creates a file and returns an open {@link FSDataOutputStream}.
+   *
+   * If the file does not have a file system scheme, this uses the default FS.
+   *
+   * This will neither produce checksum files nor overwrite a file that already
+   * exists.
+   *
+   * @param filename The filename to create
+   * @return An open FSDataOutputStream
+   * @throws IOException if there is an error creating the file
+   */
+  public FSDataOutputStream createWithNoOverwrite(String filename)
+    throws IOException {
+    return create(filename, true, false);
+  }
+
   private FSDataOutputStream create(String filename, boolean noChecksum)
       throws IOException {
+    return create(filename, noChecksum, true);
+  }
+
+  private FSDataOutputStream create(String filename, boolean noChecksum, boolean overwrite)
+    throws IOException {
     Path filePath = qualifiedPath(filename);
     // even though it was qualified using the default FS, it may not be in it
     FileSystem fs = filePath.getFileSystem(getConf());
     if (noChecksum && fs instanceof ChecksumFileSystem) {
       fs = ((ChecksumFileSystem) fs).getRawFileSystem();
     }
-    return fs.create(filePath, true /* overwrite */);
+    return fs.create(filePath, overwrite);
   }
 
   /**
@@ -175,12 +198,13 @@ public abstract class BaseCommand implements Command, Configurable {
    * @throws IOException if there is an error creating a qualified URI
    */
   public URI qualifiedURI(String filename) throws IOException {
-    URI fileURI = URI.create(filename);
-    if (RESOURCE_URI_SCHEME.equals(fileURI.getScheme())) {
-      return fileURI;
-    } else {
-      return qualifiedPath(filename).toUri();
-    }
+    try {
+      URI fileURI = new URI(filename);
+      if (RESOURCE_URI_SCHEME.equals(fileURI.getScheme())) {
+        return fileURI;
+      }
+    } catch (URISyntaxException ignore) {}
+    return qualifiedPath(filename).toUri();
   }
 
   /**
@@ -224,7 +248,9 @@ public abstract class BaseCommand implements Command, Configurable {
 
   @Override
   public Configuration getConf() {
-    return conf;
+    // In case conf is null, we'll return an empty configuration
+    // this can be on a local development machine
+    return null != conf ? conf : new Configuration();
   }
 
   /**
@@ -392,5 +418,4 @@ public abstract class BaseCommand implements Command, Configurable {
           "Could not determine file format of %s.", source));
     }
   }
-
 }

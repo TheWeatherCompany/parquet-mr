@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -33,20 +33,17 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.LinkedHashMap;
 import org.apache.avro.AvroTypeException;
 import org.apache.avro.Conversion;
 import org.apache.avro.LogicalType;
+import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
-import org.apache.avro.SchemaCompatibility;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.reflect.AvroIgnore;
 import org.apache.avro.reflect.AvroName;
-import org.apache.avro.reflect.AvroSchema;
 import org.apache.avro.reflect.ReflectData;
 import org.apache.avro.reflect.Stringable;
 import org.apache.avro.specific.SpecificData;
@@ -54,7 +51,6 @@ import org.apache.avro.util.ClassUtils;
 import org.apache.parquet.Preconditions;
 import org.apache.parquet.avro.AvroConverters.FieldStringConverter;
 import org.apache.parquet.avro.AvroConverters.FieldStringableConverter;
-import org.apache.parquet.filter2.predicate.SchemaCompatibilityValidator;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.api.Converter;
 import org.apache.parquet.io.api.GroupConverter;
@@ -236,6 +232,7 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
       GenericData model, Class<?> knownClass, ParentValueContainer setter) {
     LogicalType logicalType = schema.getLogicalType();
     Conversion<?> conversion;
+
     if (knownClass != null) {
       conversion = model.getConversionByClass(knownClass, logicalType);
     } else {
@@ -245,58 +242,66 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
     ParentValueContainer parent = ParentValueContainer
         .getConversionContainer(setter, conversion, schema);
 
-    if (schema.getType().equals(Schema.Type.BOOLEAN)) {
+    switch (schema.getType()) {
+    case BOOLEAN:
       return new AvroConverters.FieldBooleanConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.INT)) {
-      Class<?> datumClass = getDatumClass(conversion, knownClass, schema, model);
-      if (datumClass == null) {
+    case INT:
+      Class<?> intDatumClass = getDatumClass(conversion, knownClass, schema, model);
+      if (intDatumClass == null) {
         return new AvroConverters.FieldIntegerConverter(parent);
-      } else if (datumClass == byte.class || datumClass == Byte.class) {
+      }
+      if (intDatumClass == byte.class || intDatumClass == Byte.class) {
         return new AvroConverters.FieldByteConverter(parent);
-      } else if (datumClass == short.class || datumClass == Short.class) {
-        return new AvroConverters.FieldShortConverter(parent);
-      } else if (datumClass == char.class || datumClass == Character.class) {
+      }
+      if (intDatumClass == char.class || intDatumClass == Character.class) {
         return new AvroConverters.FieldCharConverter(parent);
       }
+      if (intDatumClass == short.class || intDatumClass == Short.class) {
+        return new AvroConverters.FieldShortConverter(parent);
+      }
       return new AvroConverters.FieldIntegerConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.LONG)) {
+    case LONG:
       return new AvroConverters.FieldLongConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.FLOAT)) {
+    case FLOAT:
       return new AvroConverters.FieldFloatConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.DOUBLE)) {
+    case DOUBLE:
       return new AvroConverters.FieldDoubleConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.BYTES)) {
-      Class<?> datumClass = getDatumClass(conversion, knownClass, schema, model);
-      if (datumClass == null) {
+    case BYTES:
+      Class<?> byteDatumClass = getDatumClass(conversion, knownClass, schema, model);
+      if (byteDatumClass == null) {
         return new AvroConverters.FieldByteBufferConverter(parent);
-      } else if (datumClass.isArray() && datumClass.getComponentType() == byte.class) {
+      }
+      if (byteDatumClass.isArray() && byteDatumClass.getComponentType() == byte.class) {
         return new AvroConverters.FieldByteArrayConverter(parent);
       }
       return new AvroConverters.FieldByteBufferConverter(parent);
-    } else if (schema.getType().equals(Schema.Type.STRING)) {
-      return newStringConverter(schema, model, parent);
-    } else if (schema.getType().equals(Schema.Type.RECORD)) {
-      return new AvroRecordConverter(parent, type.asGroupType(), schema, model);
-    } else if (schema.getType().equals(Schema.Type.ENUM)) {
-      return new AvroConverters.FieldEnumConverter(parent, schema, model);
-    } else if (schema.getType().equals(Schema.Type.ARRAY)) {
-      Class<?> datumClass = getDatumClass(conversion, knownClass, schema, model);
-      if (datumClass != null && datumClass.isArray()) {
-        return new AvroArrayConverter(
-            parent, type.asGroupType(), schema, model, datumClass);
-      } else {
-        return new AvroCollectionConverter(
-            parent, type.asGroupType(), schema, model, datumClass);
+    case STRING:
+      if (logicalType != null && logicalType.getName().equals(LogicalTypes.uuid().getName())) {
+        return new AvroConverters.FieldUUIDConverter(parent, type.asPrimitiveType());
       }
-    } else if (schema.getType().equals(Schema.Type.MAP)) {
+      return newStringConverter(schema, model, parent);
+    case RECORD:
+      return new AvroRecordConverter(parent, type.asGroupType(), schema, model);
+    case ENUM:
+      return new AvroConverters.FieldEnumConverter(parent, schema, model);
+    case ARRAY:
+      Class<?> arrayDatumClass = getDatumClass(conversion, knownClass, schema, model);
+      if (arrayDatumClass != null && arrayDatumClass.isArray()) {
+        return new AvroArrayConverter(parent, type.asGroupType(), schema, model,
+            arrayDatumClass);
+      }
+      return new AvroCollectionConverter(parent, type.asGroupType(), schema,
+          model, arrayDatumClass);
+    case MAP:
       return new MapConverter(parent, type.asGroupType(), schema, model);
-    } else if (schema.getType().equals(Schema.Type.UNION)) {
+    case UNION:
       return new AvroUnionConverter(parent, type, schema, model);
-    } else if (schema.getType().equals(Schema.Type.FIXED)) {
+    case FIXED:
       return new AvroConverters.FieldFixedConverter(parent, schema, model);
+    default:
+      throw new UnsupportedOperationException(String.format(
+          "Cannot convert Avro type: %s to Parquet type: %s", schema, type));
     }
-    throw new UnsupportedOperationException(String.format(
-        "Cannot convert Avro type: %s to Parquet type: %s", schema, type));
   }
 
   private static Converter newStringConverter(Schema schema, GenericData model,
@@ -381,9 +386,7 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
 
       try {
         return (Class<T>) getClassMethod.invoke(schema);
-      } catch (IllegalAccessException e) {
-        return null;
-      } catch (InvocationTargetException e) {
+      } catch (IllegalAccessException | InvocationTargetException e) {
         return null;
       }
     }

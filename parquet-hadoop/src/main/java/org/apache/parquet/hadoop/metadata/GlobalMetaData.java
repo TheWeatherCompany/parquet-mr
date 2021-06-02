@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -19,12 +19,10 @@
 package org.apache.parquet.hadoop.metadata;
 
 import static java.util.Collections.unmodifiableMap;
-import static org.apache.parquet.Preconditions.checkNotNull;
 
 import java.io.Serializable;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 
 import org.apache.parquet.schema.MessageType;
@@ -46,11 +44,14 @@ public class GlobalMetaData implements Serializable {
    * @param schema the union of the schemas for all the files
    * @param keyValueMetaData the merged app specific metadata
    * @param createdBy the description of the library that created the file
+   *
+   * @throws NullPointerException if schema or keyValueMetaData is {@code null}
    */
   public GlobalMetaData(MessageType schema, Map<String, Set<String>> keyValueMetaData, Set<String> createdBy) {
     super();
-    this.schema = checkNotNull(schema, "schema");
-    this.keyValueMetaData = unmodifiableMap(checkNotNull(keyValueMetaData, "keyValueMetaData"));
+    this.schema = Objects.requireNonNull(schema, "schema cannot be null");
+    this.keyValueMetaData = unmodifiableMap(Objects
+        .requireNonNull(keyValueMetaData, "keyValueMetaData cannot be null"));
     this.createdBy = createdBy;
   }
 
@@ -84,19 +85,25 @@ public class GlobalMetaData implements Serializable {
    * Will merge the metadata as if it was coming from a single file.
    * (for all part files written together this will always work)
    * If there are conflicting values an exception will be thrown
+   * 
+   * Provided for backward compatibility
    * @return the merged version of this
    */
   public FileMetaData merge() {
+     return merge(new StrictKeyValueMetadataMergeStrategy());
+   }
+
+  /**
+   * Will merge the metadata as if it was coming from a single file.
+   * (for all part files written together this will always work)
+   * If there are conflicting values an exception will be thrown
+   * @return the merged version of this
+   */
+  public FileMetaData merge(KeyValueMetadataMergeStrategy keyValueMetadataMergeStrategy) {
     String createdByString = createdBy.size() == 1 ?
       createdBy.iterator().next() :
       createdBy.toString();
-    Map<String, String> mergedKeyValues = new HashMap<String, String>();
-    for (Entry<String, Set<String>> entry : keyValueMetaData.entrySet()) {
-      if (entry.getValue().size() > 1) {
-        throw new RuntimeException("could not merge metadata: key " + entry.getKey() + " has conflicting values: " + entry.getValue());
-      }
-      mergedKeyValues.put(entry.getKey(), entry.getValue().iterator().next());
-    }
+    Map<String, String> mergedKeyValues = keyValueMetadataMergeStrategy.merge(keyValueMetaData);
     return new FileMetaData(schema, mergedKeyValues, createdByString);
   }
 

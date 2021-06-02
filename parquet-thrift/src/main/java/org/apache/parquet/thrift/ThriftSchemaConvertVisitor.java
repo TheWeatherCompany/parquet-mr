@@ -20,7 +20,9 @@ package org.apache.parquet.thrift;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.ShouldNeverHappenException;
 import org.apache.parquet.schema.GroupType;
 import org.apache.parquet.schema.LogicalTypeAnnotation;
@@ -52,11 +54,9 @@ import org.apache.parquet.thrift.struct.ThriftType.StringType;
 import org.apache.parquet.thrift.struct.ThriftType.StructType;
 import org.apache.parquet.thrift.struct.ThriftType.StructType.StructOrUnionType;
 
-import static org.apache.parquet.Preconditions.checkNotNull;
+import static org.apache.parquet.schema.ConversionPatterns.listOfElements;
 import static org.apache.parquet.schema.ConversionPatterns.listType;
 import static org.apache.parquet.schema.ConversionPatterns.mapType;
-import static org.apache.parquet.schema.LogicalTypeAnnotation.enumType;
-import static org.apache.parquet.schema.LogicalTypeAnnotation.stringType;
 import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY;
 import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BOOLEAN;
 import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.DOUBLE;
@@ -76,21 +76,39 @@ class ThriftSchemaConvertVisitor implements ThriftType.StateVisitor<ConvertedFie
   private final boolean doProjection;
   private final boolean keepOneOfEachUnion;
 
-  private ThriftSchemaConvertVisitor(FieldProjectionFilter fieldProjectionFilter, boolean doProjection, boolean keepOneOfEachUnion) {
-    this.fieldProjectionFilter = checkNotNull(fieldProjectionFilter, "fieldProjectionFilter");
+  private final boolean writeThreeLevelList;
+
+  private ThriftSchemaConvertVisitor(FieldProjectionFilter fieldProjectionFilter, boolean doProjection,
+                                     boolean keepOneOfEachUnion, Configuration configuration) {
+    this.fieldProjectionFilter = Objects.requireNonNull(fieldProjectionFilter,
+      "fieldProjectionFilter cannot be null");
     this.doProjection = doProjection;
     this.keepOneOfEachUnion = keepOneOfEachUnion;
+    if (configuration != null) {
+      this.writeThreeLevelList = configuration.getBoolean(
+        ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS,
+        ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS_DEFAULT);
+    } else {
+      writeThreeLevelList = ParquetWriteProtocol.WRITE_THREE_LEVEL_LISTS_DEFAULT;
+    }
+  }
+
+  private ThriftSchemaConvertVisitor(FieldProjectionFilter fieldProjectionFilter, boolean doProjection,
+                                     boolean keepOneOfEachUnion) {
+    this(fieldProjectionFilter, doProjection, keepOneOfEachUnion, new Configuration());
   }
 
   @Deprecated
   public static MessageType convert(StructType struct, FieldProjectionFilter filter) {
-    return convert(struct, filter, true);
+    return convert(struct, filter, true, new Configuration());
   }
 
-  public static MessageType convert(StructType struct, FieldProjectionFilter filter, boolean keepOneOfEachUnion) {
+  public static MessageType convert(StructType struct, FieldProjectionFilter filter, boolean keepOneOfEachUnion,
+                                    Configuration conf) {
     State state = new State(new FieldsPath(), REPEATED, "ParquetSchema");
 
-    ConvertedField converted = struct.accept(new ThriftSchemaConvertVisitor(filter, true, keepOneOfEachUnion), state);
+    ConvertedField converted = struct.accept(
+      new ThriftSchemaConvertVisitor(filter, true, keepOneOfEachUnion, conf), state);
 
     if (!converted.isKeep()) {
       throw new ThriftProjectionException("No columns have been selected");
@@ -177,7 +195,12 @@ class ThriftSchemaConvertVisitor implements ThriftType.StateVisitor<ConvertedFie
   }
 
   private ConvertedField visitListLike(ThriftField listLike, State state, boolean isSet) {
-    State childState = new State(state.path, REPEATED, state.name + "_tuple");
+    State childState;
+    if (writeThreeLevelList) {
+      childState = new State(state.path, REQUIRED, "element");
+    } else {
+      childState = new State(state.path, REPEATED, state.name + "_tuple");
+    }
 
     ConvertedField converted = listLike.getType().accept(this, childState);
 
@@ -193,7 +216,13 @@ class ThriftSchemaConvertVisitor implements ThriftType.StateVisitor<ConvertedFie
         }
       }
 
-      return new Keep(state.path, listType(state.repetition, state.name, converted.asKeep().getType()));
+      if (writeThreeLevelList) {
+        return new Keep(
+            state.path, listOfElements(state.repetition, state.name, converted.asKeep().getType()));
+      } else {
+        return new Keep(
+            state.path, listType(state.repetition, state.name, converted.asKeep().getType()));
+      }
     }
 
     return new Drop(state.path);
@@ -294,7 +323,7 @@ class ThriftSchemaConvertVisitor implements ThriftType.StateVisitor<ConvertedFie
 
   @Override
   public ConvertedField visit(EnumType enumType, State state) {
-    return visitPrimitiveType(BINARY, enumType(), state);
+    return visitPrimitiveType(BINARY, LogicalTypeAnnotation.enumType(), state);
   }
 
   @Override
@@ -314,22 +343,26 @@ class ThriftSchemaConvertVisitor implements ThriftType.StateVisitor<ConvertedFie
 
   @Override
   public ConvertedField visit(I16Type i16Type, State state) {
-    return visitPrimitiveType(INT32, state);
+    return visitPrimitiveType(INT32, LogicalTypeAnnotation.intType(16, true),state);
   }
 
   @Override
   public ConvertedField visit(I32Type i32Type, State state) {
-    return visitPrimitiveType(INT32, state);
+    return i32Type.hasLogicalTypeAnnotation() ? visitPrimitiveType(INT32, i32Type.getLogicalTypeAnnotation(), state) : visitPrimitiveType(INT32, state);
   }
 
   @Override
   public ConvertedField visit(I64Type i64Type, State state) {
-    return visitPrimitiveType(INT64, state);
+    return i64Type.hasLogicalTypeAnnotation() ? visitPrimitiveType(INT64, i64Type.getLogicalTypeAnnotation(), state) : visitPrimitiveType(INT64, state);
   }
 
   @Override
   public ConvertedField visit(StringType stringType, State state) {
-    return stringType.isBinary() ? visitPrimitiveType(BINARY, state) : visitPrimitiveType(BINARY, stringType(), state);
+    if (stringType.isBinary()) {
+      return stringType.hasLogicalTypeAnnotation() ? visitPrimitiveType(BINARY, stringType.getLogicalTypeAnnotation(), state) : visitPrimitiveType(BINARY, state);
+    } else {
+      return visitPrimitiveType(BINARY, LogicalTypeAnnotation.stringType(), state);
+    }
   }
 
   private static boolean isUnion(StructOrUnionType s) {

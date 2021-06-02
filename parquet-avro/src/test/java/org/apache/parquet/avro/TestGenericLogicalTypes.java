@@ -18,24 +18,6 @@
  */
 package org.apache.parquet.avro;
 
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import org.apache.avro.Conversion;
 import org.apache.avro.Conversions;
 import org.apache.avro.LogicalType;
@@ -44,6 +26,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.util.Utf8;
+import org.apache.hadoop.conf.Configuration;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Rule;
@@ -59,6 +42,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.apache.avro.Schema.Type.STRING;
+import static org.apache.parquet.avro.AvroTestUtil.conf;
 import static org.apache.parquet.avro.AvroTestUtil.field;
 import static org.apache.parquet.avro.AvroTestUtil.instance;
 import static org.apache.parquet.avro.AvroTestUtil.optionalField;
@@ -77,7 +61,6 @@ public class TestGenericLogicalTypes {
   public static final LogicalType DECIMAL_9_2 = LogicalTypes.decimal(9, 2);
   public static final BigDecimal D1 = new BigDecimal("-34.34");
   public static final BigDecimal D2 = new BigDecimal("117230.00");
-
 
   @BeforeClass
   public static void addDecimalAndUUID() {
@@ -108,6 +91,25 @@ public class TestGenericLogicalTypes {
     File test = write(stringSchema, s1, s2);
     Assert.assertEquals("Should convert Strings to UUIDs",
         Arrays.asList(u1, u2), read(GENERIC, uuidSchema, test));
+  }
+
+  @Test
+  public void testReadUUIDWithParquetUUID() throws IOException {
+    Schema uuidSchema = record("R",
+        field("uuid", LogicalTypes.uuid().addToSchema(Schema.create(STRING))));
+    GenericRecord u1 = instance(uuidSchema, "uuid", UUID.randomUUID());
+    GenericRecord u2 = instance(uuidSchema, "uuid", UUID.randomUUID());
+    File test = write(conf(AvroWriteSupport.WRITE_PARQUET_UUID, true), uuidSchema, u1, u2);
+
+    Assert.assertEquals("Should read UUID objects",
+        Arrays.asList(u1, u2), read(GENERIC, uuidSchema, test));
+
+    GenericRecord s1 = instance(uuidSchema, "uuid", u1.get("uuid").toString());
+    GenericRecord s2 = instance(uuidSchema, "uuid", u2.get("uuid").toString());
+
+    Assert.assertEquals("Should read UUID as Strings",
+        Arrays.asList(s1, s2), read(GenericData.get(), uuidSchema, test));
+
   }
 
   @Test
@@ -148,17 +150,32 @@ public class TestGenericLogicalTypes {
     Schema nullableUuidSchema = record("R",
         optionalField("uuid", LogicalTypes.uuid().addToSchema(Schema.create(STRING))));
     GenericRecord u1 = instance(nullableUuidSchema, "uuid", UUID.randomUUID());
-    GenericRecord u2 = instance(nullableUuidSchema, "uuid", UUID.randomUUID());
+    GenericRecord u2 = instance(nullableUuidSchema, "uuid", null);
 
     Schema stringUuidSchema = Schema.create(STRING);
     stringUuidSchema.addProp(GenericData.STRING_PROP, "String");
     Schema nullableStringSchema = record("R", optionalField("uuid", stringUuidSchema));
     GenericRecord s1 = instance(nullableStringSchema, "uuid", u1.get("uuid").toString());
-    GenericRecord s2 = instance(nullableStringSchema, "uuid", u2.get("uuid").toString());
+    GenericRecord s2 = instance(nullableStringSchema, "uuid", null);
 
     File test = write(GENERIC, nullableUuidSchema, u1, u2);
     Assert.assertEquals("Should read UUIDs as Strings",
         Arrays.asList(s1, s2), read(GENERIC, nullableStringSchema, test));
+  }
+
+  @Test
+  public void testWriteNullableUUIDWithParuqetUUID() throws IOException {
+    Schema nullableUuidSchema = record("R",
+        optionalField("uuid", LogicalTypes.uuid().addToSchema(Schema.create(STRING))));
+    GenericRecord u1 = instance(nullableUuidSchema, "uuid", UUID.randomUUID());
+    GenericRecord u2 = instance(nullableUuidSchema, "uuid", null);
+
+    GenericRecord s1 = instance(nullableUuidSchema, "uuid", u1.get("uuid").toString());
+    GenericRecord s2 = instance(nullableUuidSchema, "uuid", null);
+
+    File test = write(GENERIC, nullableUuidSchema, u1, u2);
+    Assert.assertEquals("Should read UUIDs as Strings",
+        Arrays.asList(s1, s2), read(GenericData.get(), nullableUuidSchema, test));
   }
 
   @Test
@@ -264,8 +281,16 @@ public class TestGenericLogicalTypes {
     return write(GenericData.get(), schema, data);
   }
 
+  private <D> File write(Configuration conf, Schema schema, D... data) throws IOException {
+    return write(conf, GenericData.get(), schema, data);
+  }
+
   private <D> File write(GenericData model, Schema schema, D... data) throws IOException {
     return AvroTestUtil.write(temp, model, schema, data);
+  }
+
+  private <D> File write(Configuration conf, GenericData model, Schema schema, D... data) throws IOException {
+    return AvroTestUtil.write(temp, conf, model, schema, data);
   }
 
 }

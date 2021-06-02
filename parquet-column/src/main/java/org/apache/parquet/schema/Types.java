@@ -21,6 +21,7 @@ package org.apache.parquet.schema;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.apache.parquet.Preconditions;
@@ -29,6 +30,8 @@ import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.parquet.schema.Type.ID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.parquet.schema.LogicalTypeAnnotation.mapType;
 
 /**
  * This class provides fluent builders that produce Parquet schema Types.
@@ -39,7 +42,7 @@ import org.slf4j.LoggerFactory;
  *   Types.optional(INT32).named("number");
  * </pre>
  * <p>
- * The required(PrimitiveTypeName) factory method produces a primitive
+ * The required({@link PrimitiveTypeName}) factory method produces a primitive
  * type builder, and the {@link PrimitiveBuilder#named(String)} builds the
  * {@link PrimitiveType}. Between {@code required} and {@code named}, other
  * builder methods can be used to add type annotations or other type metadata:
@@ -48,7 +51,7 @@ import org.slf4j.LoggerFactory;
  *   Types.optional(FIXED_LEN_BYTE_ARRAY).length(20).named("sha1");
  * </pre>
  * <p>
- * Optional types are built using optional(PrimitiveTypeName) to get
+ * Optional types are built using {@link #optional(PrimitiveTypeName)} to get
  * the builder.
  * <p>
  * Groups are built similarly, using {@code requiredGroup()} (or the optional
@@ -94,7 +97,7 @@ import org.slf4j.LoggerFactory;
  *        .named("User")
  * </pre>
  * <p>
- * Maps are built similarly, using {@code requiredMap()} (or the optionalMap()
+ * Maps are built similarly, using {@code requiredMap()} (or the  {@link #optionalMap()}
  * version) to return a map builder. Map builders provide {@code key} to add
  * a primitive as key or a {@code groupKey} to add a group as key. {@code key()}
  * returns a MapKey builder, which extends a primitive builder. On the other hand,
@@ -235,8 +238,7 @@ public class Types {
     protected final THIS repetition(Type.Repetition repetition) {
       Preconditions.checkArgument(!repetitionAlreadySet,
           "Repetition has already been set");
-      Preconditions.checkNotNull(repetition, "Repetition cannot be null");
-      this.repetition = repetition;
+      this.repetition = Objects.requireNonNull(repetition, "Repetition cannot be null");
       this.repetitionAlreadySet = true;
       return self();
     }
@@ -308,8 +310,8 @@ public class Types {
      * @return the parent {@code GroupBuilder} or the constructed {@code Type}
      */
     public P named(String name) {
-      Preconditions.checkNotNull(name, "Name is required");
-      Preconditions.checkNotNull(repetition, "Repetition is required");
+      Objects.requireNonNull(name, "Name is required");
+      Objects.requireNonNull(repetition, "Repetition is required");
 
       Type type = build(name);
       if (parent != null) {
@@ -445,20 +447,22 @@ public class Types {
         logicalTypeAnnotation.accept(new LogicalTypeAnnotation.LogicalTypeAnnotationVisitor<Boolean>() {
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.StringLogicalTypeAnnotation stringLogicalType) {
-            checkBinaryPrimitiveType(stringLogicalType);
-            return Optional.of(true);
+            return checkBinaryPrimitiveType(stringLogicalType);
           }
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.JsonLogicalTypeAnnotation jsonLogicalType) {
-            checkBinaryPrimitiveType(jsonLogicalType);
-            return Optional.of(true);
+            return checkBinaryPrimitiveType(jsonLogicalType);
           }
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.BsonLogicalTypeAnnotation bsonLogicalType) {
-            checkBinaryPrimitiveType(bsonLogicalType);
-            return Optional.of(true);
+            return checkBinaryPrimitiveType(bsonLogicalType);
+          }
+
+          @Override
+          public Optional<Boolean> visit(LogicalTypeAnnotation.UUIDLogicalTypeAnnotation uuidLogicalType) {
+            return checkFixedPrimitiveType(LogicalTypeAnnotation.UUIDLogicalTypeAnnotation.BYTES, uuidLogicalType);
           }
 
           @Override
@@ -495,8 +499,7 @@ public class Types {
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.DateLogicalTypeAnnotation dateLogicalType) {
-            checkInt32PrimitiveType(dateLogicalType);
-            return Optional.of(true);
+            return checkInt32PrimitiveType(dateLogicalType);
           }
 
           @Override
@@ -536,41 +539,43 @@ public class Types {
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.TimestampLogicalTypeAnnotation timestampLogicalType) {
-            checkInt64PrimitiveType(timestampLogicalType);
-            return Optional.of(true);
+            return checkInt64PrimitiveType(timestampLogicalType);
           }
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.IntervalLogicalTypeAnnotation intervalLogicalType) {
-            Preconditions.checkState(
-                (primitiveType == PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY) &&
-                (length == 12),
-                "INTERVAL can only annotate FIXED_LEN_BYTE_ARRAY(12)");
-            return Optional.of(true);
+            return checkFixedPrimitiveType(12, intervalLogicalType);
           }
 
           @Override
           public Optional<Boolean> visit(LogicalTypeAnnotation.EnumLogicalTypeAnnotation enumLogicalType) {
+            return checkBinaryPrimitiveType(enumLogicalType);
+          }
+
+          private Optional<Boolean> checkFixedPrimitiveType(int l, LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(
-                primitiveType == PrimitiveTypeName.BINARY,
-                "ENUM can only annotate binary fields");
+                primitiveType == PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY && length == l,
+              logicalTypeAnnotation.toString() + " can only annotate FIXED_LEN_BYTE_ARRAY(" + l + ')');
             return Optional.of(true);
           }
 
-          private void checkBinaryPrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
+          private Optional<Boolean> checkBinaryPrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(
                 primitiveType == PrimitiveTypeName.BINARY,
-              logicalTypeAnnotation.toString() + " can only annotate binary fields");
+              logicalTypeAnnotation.toString() + " can only annotate BINARY");
+            return Optional.of(true);
           }
 
-          private void checkInt32PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
+          private Optional<Boolean> checkInt32PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(primitiveType == PrimitiveTypeName.INT32,
               logicalTypeAnnotation.toString() + " can only annotate INT32");
+            return Optional.of(true);
           }
 
-          private void checkInt64PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
+          private Optional<Boolean> checkInt64PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(primitiveType == PrimitiveTypeName.INT64,
               logicalTypeAnnotation.toString() + " can only annotate INT64");
+            return Optional.of(true);
           }
         }).orElseThrow(() -> new IllegalStateException(logicalTypeAnnotation + " can not be applied to a primitive type"));
       }
@@ -646,12 +651,12 @@ public class Types {
 
     private BaseGroupBuilder(P parent) {
       super(parent);
-      this.fields = new ArrayList<Type>();
+      this.fields = new ArrayList<>();
     }
 
     private BaseGroupBuilder(Class<P> returnType) {
       super(returnType);
-      this.fields = new ArrayList<Type>();
+      this.fields = new ArrayList<>();
     }
 
     @Override
@@ -659,7 +664,7 @@ public class Types {
 
     public PrimitiveBuilder<THIS> primitive(
         PrimitiveTypeName type, Type.Repetition repetition) {
-      return new PrimitiveBuilder<THIS> (self(), type)
+      return new PrimitiveBuilder<> (self(), type)
           .repetition(repetition);
     }
 
@@ -673,7 +678,7 @@ public class Types {
      */
     public PrimitiveBuilder<THIS> required(
         PrimitiveTypeName type) {
-      return new PrimitiveBuilder<THIS>(self(), type)
+      return new PrimitiveBuilder<>(self(), type)
           .repetition(Type.Repetition.REQUIRED);
     }
 
@@ -687,7 +692,7 @@ public class Types {
      */
     public PrimitiveBuilder<THIS> optional(
         PrimitiveTypeName type) {
-      return new PrimitiveBuilder<THIS>(self(), type)
+      return new PrimitiveBuilder<>(self(), type)
           .repetition(Type.Repetition.OPTIONAL);
     }
 
@@ -701,12 +706,12 @@ public class Types {
      */
     public PrimitiveBuilder<THIS> repeated(
         PrimitiveTypeName type) {
-      return new PrimitiveBuilder<THIS>(self(), type)
+      return new PrimitiveBuilder<>(self(), type)
           .repetition(Type.Repetition.REPEATED);
     }
 
     public GroupBuilder<THIS> group(Type.Repetition repetition) {
-      return new GroupBuilder<THIS>(self())
+      return new GroupBuilder<>(self())
           .repetition(repetition);
     }
 
@@ -717,7 +722,7 @@ public class Types {
      *          fields.
      */
     public GroupBuilder<THIS> requiredGroup() {
-      return new GroupBuilder<THIS>(self())
+      return new GroupBuilder<>(self())
           .repetition(Type.Repetition.REQUIRED);
     }
 
@@ -728,7 +733,7 @@ public class Types {
      *          fields.
      */
     public GroupBuilder<THIS> optionalGroup() {
-      return new GroupBuilder<THIS>(self())
+      return new GroupBuilder<>(self())
           .repetition(Type.Repetition.OPTIONAL);
     }
 
@@ -739,7 +744,7 @@ public class Types {
      *          fields.
      */
     public GroupBuilder<THIS> repeatedGroup() {
-      return new GroupBuilder<THIS>(self())
+      return new GroupBuilder<>(self())
           .repetition(Type.Repetition.REPEATED);
     }
 
@@ -776,21 +781,21 @@ public class Types {
 
     public MapBuilder<THIS> map(
         Type.Repetition repetition) {
-      return new MapBuilder<THIS>(self()).repetition(repetition);
+      return new MapBuilder<>(self()).repetition(repetition);
     }
 
     public MapBuilder<THIS> requiredMap() {
-      return new MapBuilder<THIS>(self())
+      return new MapBuilder<>(self())
           .repetition(Type.Repetition.REQUIRED);
     }
 
     public MapBuilder<THIS> optionalMap() {
-      return new MapBuilder<THIS>(self())
+      return new MapBuilder<>(self())
           .repetition(Type.Repetition.OPTIONAL);
     }
 
     public ListBuilder<THIS> list(Type.Repetition repetition) {
-      return new ListBuilder<THIS>(self()).repetition(repetition);
+      return new ListBuilder<>(self()).repetition(repetition);
     }
 
     public ListBuilder<THIS> requiredList() {
@@ -842,7 +847,7 @@ public class Types {
       public ValueBuilder<MP, M> value(PrimitiveTypeName type,
                                        Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new ValueBuilder<MP, M>(mapBuilder, type).repetition(repetition);
+        return new ValueBuilder<>(mapBuilder, type).repetition(repetition);
       }
 
       public ValueBuilder<MP, M> requiredValue(PrimitiveTypeName type) {
@@ -855,7 +860,7 @@ public class Types {
 
       public GroupValueBuilder<MP, M> groupValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new GroupValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new GroupValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public GroupValueBuilder<MP, M> requiredGroupValue() {
@@ -868,7 +873,7 @@ public class Types {
 
       public MapValueBuilder<MP, M> mapValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new MapValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new MapValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public MapValueBuilder<MP, M> requiredMapValue() {
@@ -881,7 +886,7 @@ public class Types {
 
       public ListValueBuilder<MP, M> listValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new ListValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new ListValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public ListValueBuilder<MP, M> requiredListValue() {
@@ -919,6 +924,7 @@ public class Types {
         this.mapBuilder = mapBuilder;
       }
 
+      @Override
       public MP named(String name) {
         mapBuilder.setValueType(build("value"));
         return mapBuilder.named(name);
@@ -948,7 +954,7 @@ public class Types {
       public ValueBuilder<MP, M> value(PrimitiveTypeName type,
                                        Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new ValueBuilder<MP, M>(mapBuilder, type).repetition(repetition);
+        return new ValueBuilder<>(mapBuilder, type).repetition(repetition);
       }
 
       public ValueBuilder<MP, M> requiredValue(PrimitiveTypeName type) {
@@ -961,7 +967,7 @@ public class Types {
 
       public GroupValueBuilder<MP, M> groupValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new GroupValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new GroupValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public GroupValueBuilder<MP, M> requiredGroupValue() {
@@ -974,7 +980,7 @@ public class Types {
 
       public MapValueBuilder<MP, M> mapValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new MapValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new MapValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public MapValueBuilder<MP, M> requiredMapValue() {
@@ -987,7 +993,7 @@ public class Types {
 
       public ListValueBuilder<MP, M> listValue(Type.Repetition repetition) {
         mapBuilder.setKeyType(build("key"));
-        return new ListValueBuilder<MP, M>(mapBuilder).repetition(repetition);
+        return new ListValueBuilder<>(mapBuilder).repetition(repetition);
       }
 
       public ListValueBuilder<MP, M> requiredListValue() {
@@ -1020,6 +1026,7 @@ public class Types {
         this.mapBuilder = mapBuilder;
       }
 
+      @Override
       public MP named(String name) {
         mapBuilder.setValueType(build("value"));
         return mapBuilder.named(name);
@@ -1040,6 +1047,7 @@ public class Types {
         this.mapBuilder = mapBuilder;
       }
 
+      @Override
       public MP named(String name) {
         mapBuilder.setValueType(build("value"));
         return mapBuilder.named(name);
@@ -1060,6 +1068,7 @@ public class Types {
         this.mapBuilder = mapBuilder;
       }
 
+      @Override
       public MP named(String name) {
         mapBuilder.setValueType(build("value"));
         return mapBuilder.named(name);
@@ -1098,7 +1107,7 @@ public class Types {
     protected abstract THIS self();
 
     public KeyBuilder<P, THIS> key(PrimitiveTypeName type) {
-      return new KeyBuilder<P, THIS>(self(), type);
+      return new KeyBuilder<>(self(), type);
     }
 
     public THIS key(Type type) {
@@ -1107,12 +1116,12 @@ public class Types {
     }
 
     public GroupKeyBuilder<P, THIS> groupKey() {
-      return new GroupKeyBuilder<P, THIS>(self());
+      return new GroupKeyBuilder<>(self());
     }
 
     public ValueBuilder<P, THIS> value(PrimitiveTypeName type,
                                        Type.Repetition repetition) {
-      return new ValueBuilder<P, THIS>(self(), type).repetition(repetition);
+      return new ValueBuilder<>(self(), type).repetition(repetition);
     }
 
     public ValueBuilder<P, THIS> requiredValue(PrimitiveTypeName type) {
@@ -1124,7 +1133,7 @@ public class Types {
     }
 
     public GroupValueBuilder<P, THIS> groupValue(Type.Repetition repetition) {
-      return new GroupValueBuilder<P, THIS>(self()).repetition(repetition);
+      return new GroupValueBuilder<>(self()).repetition(repetition);
     }
 
     public GroupValueBuilder<P, THIS> requiredGroupValue() {
@@ -1136,7 +1145,7 @@ public class Types {
     }
 
     public MapValueBuilder<P, THIS> mapValue(Type.Repetition repetition) {
-      return new MapValueBuilder<P, THIS>(self()).repetition(repetition);
+      return new MapValueBuilder<>(self()).repetition(repetition);
     }
 
     public MapValueBuilder<P, THIS> requiredMapValue() {
@@ -1148,7 +1157,7 @@ public class Types {
     }
 
     public ListValueBuilder<P, THIS> listValue(Type.Repetition repetition) {
-      return new ListValueBuilder<P, THIS>(self()).repetition(repetition);
+      return new ListValueBuilder<>(self()).repetition(repetition);
     }
 
     public ListValueBuilder<P, THIS> requiredListValue() {
@@ -1172,18 +1181,18 @@ public class Types {
         keyType = STRING_KEY;
       }
 
-      GroupBuilder<GroupType> builder = buildGroup(repetition).as(OriginalType.MAP);
+      GroupBuilder<GroupType> builder = buildGroup(repetition).as(mapType());
       if (id != null) {
         builder.id(id.intValue());
       }
 
       if (valueType != null) {
         return builder
-            .repeatedGroup().addFields(keyType, valueType).named("map")
+            .repeatedGroup().addFields(keyType, valueType).named(ConversionPatterns.MAP_REPEATED_NAME)
             .named(name);
       } else {
         return builder
-            .repeatedGroup().addFields(keyType).named("map")
+            .repeatedGroup().addFields(keyType).named(ConversionPatterns.MAP_REPEATED_NAME)
             .named(name);
       }
     }
@@ -1234,6 +1243,7 @@ public class Types {
         this.listBuilder = listBuilder;
       }
 
+      @Override
       public LP named(String name) {
         listBuilder.setElementType(build("element"));
         return listBuilder.named(name);
@@ -1254,6 +1264,7 @@ public class Types {
         this.listBuilder = listBuilder;
       }
 
+      @Override
       public LP named(String name) {
         listBuilder.setElementType(build("element"));
         return listBuilder.named(name);
@@ -1316,7 +1327,7 @@ public class Types {
     protected Type build(String name) {
       Preconditions.checkState(logicalTypeAnnotation == null,
           "LIST is already the logical type and can't be changed");
-      Preconditions.checkNotNull(elementType, "List element type");
+      Objects.requireNonNull(elementType, "List element type cannot be null");
 
       GroupBuilder<GroupType> builder = buildGroup(repetition).as(OriginalType.LIST);
       if (id != null) {
@@ -1330,7 +1341,7 @@ public class Types {
 
     public ElementBuilder<P, THIS> element(PrimitiveTypeName type,
                                            Type.Repetition repetition) {
-      return new ElementBuilder<P, THIS>(self(), type).repetition(repetition);
+      return new ElementBuilder<>(self(), type).repetition(repetition);
     }
 
     public ElementBuilder<P, THIS> requiredElement(PrimitiveTypeName type) {
@@ -1342,7 +1353,7 @@ public class Types {
     }
 
     public GroupElementBuilder<P, THIS> groupElement(Type.Repetition repetition) {
-      return new GroupElementBuilder<P, THIS>(self()).repetition(repetition);
+      return new GroupElementBuilder<>(self()).repetition(repetition);
     }
 
     public GroupElementBuilder<P, THIS> requiredGroupElement() {
@@ -1354,7 +1365,7 @@ public class Types {
     }
 
     public MapElementBuilder<P, THIS> mapElement(Type.Repetition repetition) {
-      return new MapElementBuilder<P, THIS>(self()).repetition(repetition);
+      return new MapElementBuilder<>(self()).repetition(repetition);
     }
 
     public MapElementBuilder<P, THIS> requiredMapElement() {
@@ -1366,7 +1377,7 @@ public class Types {
     }
 
     public ListElementBuilder<P, THIS> listElement(Type.Repetition repetition) {
-      return new ListElementBuilder<P, THIS>(self()).repetition(repetition);
+      return new ListElementBuilder<>(self()).repetition(repetition);
     }
 
     public ListElementBuilder<P, THIS> requiredListElement() {
@@ -1415,7 +1426,7 @@ public class Types {
      */
     @Override
     public MessageType named(String name) {
-      Preconditions.checkNotNull(name, "Name is required");
+      Objects.requireNonNull(name, "Name is required");
       return new MessageType(name, fields);
     }
   }
@@ -1431,7 +1442,7 @@ public class Types {
 
   public static PrimitiveBuilder<PrimitiveType> primitive(PrimitiveTypeName type,
                                                           Type.Repetition repetition) {
-    return new PrimitiveBuilder<PrimitiveType>(PrimitiveType.class, type)
+    return new PrimitiveBuilder<>(PrimitiveType.class, type)
         .repetition(repetition);
   }
 
@@ -1442,7 +1453,7 @@ public class Types {
    * @return a {@link PrimitiveBuilder}
    */
   public static PrimitiveBuilder<PrimitiveType> required(PrimitiveTypeName type) {
-    return new PrimitiveBuilder<PrimitiveType>(PrimitiveType.class, type)
+    return new PrimitiveBuilder<>(PrimitiveType.class, type)
         .repetition(Type.Repetition.REQUIRED);
   }
 
@@ -1453,7 +1464,7 @@ public class Types {
    * @return a {@link PrimitiveBuilder}
    */
   public static PrimitiveBuilder<PrimitiveType> optional(PrimitiveTypeName type) {
-    return new PrimitiveBuilder<PrimitiveType>(PrimitiveType.class, type)
+    return new PrimitiveBuilder<>(PrimitiveType.class, type)
         .repetition(Type.Repetition.OPTIONAL);
   }
 
@@ -1464,13 +1475,13 @@ public class Types {
    * @return a {@link PrimitiveBuilder}
    */
   public static PrimitiveBuilder<PrimitiveType> repeated(PrimitiveTypeName type) {
-    return new PrimitiveBuilder<PrimitiveType>(PrimitiveType.class, type)
+    return new PrimitiveBuilder<>(PrimitiveType.class, type)
         .repetition(Type.Repetition.REPEATED);
   }
 
   public static GroupBuilder<GroupType> buildGroup(
       Type.Repetition repetition) {
-    return new GroupBuilder<GroupType>(GroupType.class).repetition(repetition);
+    return new GroupBuilder<>(GroupType.class).repetition(repetition);
   }
 
   /**
@@ -1479,7 +1490,7 @@ public class Types {
    * @return a {@link GroupBuilder}
    */
   public static GroupBuilder<GroupType> requiredGroup() {
-    return new GroupBuilder<GroupType>(GroupType.class)
+    return new GroupBuilder<>(GroupType.class)
         .repetition(Type.Repetition.REQUIRED);
   }
 
@@ -1489,7 +1500,7 @@ public class Types {
    * @return a {@link GroupBuilder}
    */
   public static GroupBuilder<GroupType> optionalGroup() {
-    return new GroupBuilder<GroupType>(GroupType.class)
+    return new GroupBuilder<>(GroupType.class)
         .repetition(Type.Repetition.OPTIONAL);
   }
 
@@ -1499,13 +1510,13 @@ public class Types {
    * @return a {@link GroupBuilder}
    */
   public static GroupBuilder<GroupType> repeatedGroup() {
-    return new GroupBuilder<GroupType>(GroupType.class)
+    return new GroupBuilder<>(GroupType.class)
         .repetition(Type.Repetition.REPEATED);
   }
 
 
   public static MapBuilder<GroupType> map(Type.Repetition repetition) {
-    return new MapBuilder<GroupType>(GroupType.class).repetition(repetition);
+    return new MapBuilder<>(GroupType.class).repetition(repetition);
   }
 
   public static MapBuilder<GroupType> requiredMap() {
@@ -1517,7 +1528,7 @@ public class Types {
   }
 
   public static ListBuilder<GroupType> list(Type.Repetition repetition) {
-    return new ListBuilder<GroupType>(GroupType.class).repetition(repetition);
+    return new ListBuilder<>(GroupType.class).repetition(repetition);
   }
 
   public static ListBuilder<GroupType> requiredList() {

@@ -81,7 +81,7 @@ public abstract class DictionaryValuesWriter extends ValuesWriter implements Req
   protected boolean dictionaryTooBig;
 
   /* current size in bytes the dictionary will take once serialized */
-  protected int dictionaryByteSize;
+  protected long dictionaryByteSize;
 
   /* size in bytes of the dictionary at the end of last dictionary encoded page (in case the current page falls back to PLAIN) */
   protected int lastUsedDictionaryByteSize;
@@ -98,7 +98,7 @@ public abstract class DictionaryValuesWriter extends ValuesWriter implements Req
   protected ByteBufferAllocator allocator;
   /* Track the list of writers used so they can be appropriately closed when necessary
      (currently used for off-heap memory which is not garbage collected) */
-  private List<RunLengthBitPackingHybridEncoder> encoders = new ArrayList<RunLengthBitPackingHybridEncoder>();
+  private List<RunLengthBitPackingHybridEncoder> encoders = new ArrayList<>();
 
   protected DictionaryValuesWriter(int maxDictionaryByteSize, Encoding encodingForDataPage, Encoding encodingForDictionaryPage, ByteBufferAllocator allocator) {
     this.allocator = allocator;
@@ -173,7 +173,7 @@ public abstract class DictionaryValuesWriter extends ValuesWriter implements Req
       BytesInput bytes = concat(BytesInput.from(bytesHeader), rleEncodedBytes);
       // remember size of dictionary when we last wrote a page
       lastUsedDictionarySize = getDictionarySize();
-      lastUsedDictionaryByteSize = dictionaryByteSize;
+      lastUsedDictionaryByteSize = Math.toIntExact(dictionaryByteSize);
       return bytes;
     } catch (IOException e) {
       throw new ParquetEncodingException("could not encode the values", e);
@@ -235,7 +235,7 @@ public abstract class DictionaryValuesWriter extends ValuesWriter implements Req
   public static class PlainBinaryDictionaryValuesWriter extends DictionaryValuesWriter {
 
     /* type specific dictionary content */
-    protected Object2IntMap<Binary> binaryDictionaryContent = new Object2IntLinkedOpenHashMap<Binary>();
+    protected Object2IntMap<Binary> binaryDictionaryContent = new Object2IntLinkedOpenHashMap<>();
 
     public PlainBinaryDictionaryValuesWriter(int maxDictionaryByteSize, Encoding encodingForDataPage, Encoding encodingForDictionaryPage, ByteBufferAllocator allocator) {
       super(maxDictionaryByteSize, encodingForDataPage, encodingForDictionaryPage, allocator);
@@ -249,7 +249,7 @@ public abstract class DictionaryValuesWriter extends ValuesWriter implements Req
         id = binaryDictionaryContent.size();
         binaryDictionaryContent.put(v.copy(), id);
         // length as int (4 bytes) + actual bytes
-        dictionaryByteSize += 4 + v.length();
+        dictionaryByteSize += 4L + v.length();
       }
       encodedValues.add(id);
     }

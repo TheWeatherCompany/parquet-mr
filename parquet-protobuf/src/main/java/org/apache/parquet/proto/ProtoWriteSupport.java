@@ -28,19 +28,19 @@ import org.apache.parquet.hadoop.api.WriteSupport;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
-import org.apache.parquet.schema.*;
 import org.apache.parquet.schema.Type;
+import org.apache.parquet.schema.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Array;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 import static java.util.Optional.ofNullable;
+
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_ITEM_SEPARATOR;
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_KEY_VALUE_SEPARATOR;
+import static org.apache.parquet.proto.ProtoConstants.METADATA_ENUM_PREFIX;
 
 /**
  * Implementation of {@link WriteSupport} for writing Protocol Buffers.
@@ -59,6 +59,9 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   private RecordConsumer recordConsumer;
   private Class<? extends Message> protoMessage;
   private MessageWriter messageWriter;
+  // Keep protobuf enum value with number in the metadata, so that in read time, a reader can read at least
+  // the number back even with an outdated schema which might not contain all enum values.
+  private Map<String, Map<String, Integer>> protoEnumBookKeeper = new HashMap<>();
 
   public ProtoWriteSupport() {
   }
@@ -130,13 +133,41 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     this.messageWriter = new MessageWriter(messageDescriptor, rootSchema);
 
-    Map<String, String> extraMetaData = new HashMap<String, String>();
+    Map<String, String> extraMetaData = new HashMap<>();
     extraMetaData.put(ProtoReadSupport.PB_CLASS, protoMessage.getName());
     extraMetaData.put(ProtoReadSupport.PB_DESCRIPTOR, serializeDescriptor(protoMessage));
     extraMetaData.put(PB_SPECS_COMPLIANT_WRITE, String.valueOf(writeSpecsCompliant));
     return new WriteContext(rootSchema, extraMetaData);
   }
 
+  @Override
+  public FinalizedWriteContext finalizeWrite() {
+    Map<String, String> protoMetadata = enumMetadata();
+    return new FinalizedWriteContext(protoMetadata);
+  }
+
+  private Map<String, String> enumMetadata() {
+    Map<String, String> enumMetadata = new HashMap<>();
+    for (Map.Entry<String, Map<String, Integer>> enumNameNumberMapping : protoEnumBookKeeper.entrySet()) {
+      StringBuilder nameNumberPairs = new StringBuilder();
+      if (enumNameNumberMapping.getValue().isEmpty()) {
+        // No enum is ever written to any column of this file, put an empty string as the value in the metadata
+        LOG.info("No enum is written for " + enumNameNumberMapping.getKey());
+      }
+      int idx = 0;
+      for (Map.Entry<String, Integer> nameNumberPair : enumNameNumberMapping.getValue().entrySet()) {
+        nameNumberPairs.append(nameNumberPair.getKey())
+          .append(METADATA_ENUM_KEY_VALUE_SEPARATOR)
+          .append(nameNumberPair.getValue());
+        idx ++;
+        if (idx < enumNameNumberMapping.getValue().size()) {
+          nameNumberPairs.append(METADATA_ENUM_ITEM_SEPARATOR);
+        }
+      }
+      enumMetadata.put(METADATA_ENUM_PREFIX + enumNameNumberMapping.getKey(), nameNumberPairs.toString());
+    }
+    return enumMetadata;
+  }
 
   class FieldWriter {
     String fieldName;
@@ -158,9 +189,13 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     /** Used for writing nonrepeated (optional, required) fields*/
     void writeField(Object value) {
-      recordConsumer.startField(fieldName, index);
+      if (!(this instanceof ProtoWriteSupport.MapWriter)) {
+        recordConsumer.startField(fieldName, index);
+      }
       writeRawValue(value);
-      recordConsumer.endField(fieldName, index);
+      if (!(this instanceof ProtoWriteSupport.MapWriter)) {
+        recordConsumer.endField(fieldName, index);
+      }
     }
   }
 
@@ -202,7 +237,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
         case LONG: return new LongWriter();
         case FLOAT: return new FloatWriter();
         case DOUBLE: return new DoubleWriter();
-        case ENUM: return new EnumWriter();
+        case ENUM: return new EnumWriter(fieldDescriptor.getEnumType());
         case BOOLEAN: return new BooleanWriter();
         case BYTE_STRING: return new BinaryWriter();
       }
@@ -279,20 +314,42 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     }
 
     private void writeAllFields(MessageOrBuilder pb) {
-      //returns changed fields with values. Map is ordered by id.
-      Map<FieldDescriptor, Object> changedPbFields = pb.getAllFields();
+      Descriptor messageDescriptor = pb.getDescriptorForType();
+      Descriptors.FileDescriptor.Syntax syntax = messageDescriptor.getFile().getSyntax();
 
-      for (Map.Entry<FieldDescriptor, Object> entry : changedPbFields.entrySet()) {
-        FieldDescriptor fieldDescriptor = entry.getKey();
+      if (Descriptors.FileDescriptor.Syntax.PROTO2.equals(syntax)) {
+        //returns changed fields with values. Map is ordered by id.
+        Map<FieldDescriptor, Object> changedPbFields = pb.getAllFields();
 
-        if(fieldDescriptor.isExtension()) {
-          // Field index of an extension field might overlap with a base field.
-          throw new UnsupportedOperationException(
-                  "Cannot convert Protobuf message with extension field(s)");
+        for (Map.Entry<FieldDescriptor, Object> entry : changedPbFields.entrySet()) {
+          FieldDescriptor fieldDescriptor = entry.getKey();
+
+          if(fieldDescriptor.isExtension()) {
+            // Field index of an extension field might overlap with a base field.
+            throw new UnsupportedOperationException(
+              "Cannot convert Protobuf message with extension field(s)");
+          }
+
+          int fieldIndex = fieldDescriptor.getIndex();
+          fieldWriters[fieldIndex].writeField(entry.getValue());
         }
+      } else if (Descriptors.FileDescriptor.Syntax.PROTO3.equals(syntax)) {
+        List<FieldDescriptor> fieldDescriptors = messageDescriptor.getFields();
+        for (FieldDescriptor fieldDescriptor : fieldDescriptors) {
+          FieldDescriptor.Type type = fieldDescriptor.getType();
 
-        int fieldIndex = fieldDescriptor.getIndex();
-        fieldWriters[fieldIndex].writeField(entry.getValue());
+          //For a field in a oneOf that isn't set don't write anything
+          if (fieldDescriptor.getContainingOneof() != null && !pb.hasField(fieldDescriptor)) {
+            continue;
+          }
+
+          if (!fieldDescriptor.isRepeated() && FieldDescriptor.Type.MESSAGE.equals(type) && !pb.hasField(fieldDescriptor)) {
+            continue;
+          }
+          int fieldIndex = fieldDescriptor.getIndex();
+          FieldWriter fieldWriter = fieldWriters[fieldIndex];
+          fieldWriter.writeField(pb.getField(fieldDescriptor));
+        }
       }
     }
   }
@@ -311,9 +368,13 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     @Override
     final void writeField(Object value) {
+      List<?> list = (List<?>) value;
+      if (list.isEmpty()) {
+        return;
+      }
+
       recordConsumer.startField(fieldName, index);
       recordConsumer.startGroup();
-      List<?> list = (List<?>) value;
 
       recordConsumer.startField("list", 0); // This is the wrapper group for the array field
       for (Object listEntry: list) {
@@ -350,8 +411,12 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     @Override
     final void writeField(Object value) {
-      recordConsumer.startField(fieldName, index);
       List<?> list = (List<?>) value;
+      if (list.isEmpty()) {
+        return;
+      }
+
+      recordConsumer.startField(fieldName, index);
 
       for (Object listEntry: list) {
         fieldWriter.writeRawValue(listEntry);
@@ -413,10 +478,15 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
 
     @Override
     final void writeRawValue(Object value) {
+      Collection<Message> collection = (Collection<Message>) value;
+      if (collection.isEmpty()) {
+        return;
+      }
+      recordConsumer.startField(fieldName, index);
       recordConsumer.startGroup();
 
       recordConsumer.startField("key_value", 0); // This is the wrapper group for the map field
-      for (Message msg : (Collection<Message>) value) {
+      for (Message msg : collection) {
         recordConsumer.startGroup();
 
         final Descriptor descriptorForType = msg.getDescriptorForType();
@@ -432,6 +502,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
       recordConsumer.endField("key_value", 0);
 
       recordConsumer.endGroup();
+      recordConsumer.endField(fieldName, index);
     }
   }
 
@@ -450,10 +521,23 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   }
 
   class EnumWriter extends FieldWriter {
+    Map<String, Integer> enumNameNumberPairs;
+
+    public EnumWriter(Descriptors.EnumDescriptor enumType) {
+      if (protoEnumBookKeeper.containsKey(enumType.getFullName())) {
+        enumNameNumberPairs = protoEnumBookKeeper.get(enumType.getFullName());
+      } else {
+        enumNameNumberPairs = new HashMap<>();
+        protoEnumBookKeeper.put(enumType.getFullName(), enumNameNumberPairs);
+      }
+    }
+
     @Override
     final void writeRawValue(Object value) {
-      Binary binary = Binary.fromString(((Descriptors.EnumValueDescriptor) value).getName());
+      Descriptors.EnumValueDescriptor enumValueDesc = (Descriptors.EnumValueDescriptor) value;
+      Binary binary = Binary.fromString(enumValueDesc.getName());
       recordConsumer.addBinary(binary);
+      enumNameNumberPairs.putIfAbsent(enumValueDesc.getName(), enumValueDesc.getNumber());
     }
   }
 

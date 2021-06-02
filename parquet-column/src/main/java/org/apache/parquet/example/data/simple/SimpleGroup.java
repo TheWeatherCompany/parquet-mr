@@ -47,29 +47,33 @@ public class SimpleGroup extends Group {
     return toString("");
   }
 
-  public String toString(String indent) {
-    String result = "";
+  private StringBuilder appendToString(StringBuilder builder, String indent) {
     int i = 0;
     for (Type field : schema.getFields()) {
       String name = field.getName();
       List<Object> values = data[i];
       ++i;
-      if (values != null) {
-        if (values.size() > 0) {
-          for (Object value : values) {
-            result += indent + name;
-            if (value == null) {
-              result += ": NULL\n";
-            } else if (value instanceof Group) {
-              result += "\n" + ((SimpleGroup)value).toString(indent+"  ");
-            } else {
-              result += ": " + value.toString() + "\n";
-            }
+      if (values != null && !values.isEmpty()) {
+        for (Object value : values) {
+          builder.append(indent).append(name);
+          if (value == null) {
+            builder.append(": NULL\n");
+          } else if (value instanceof Group) {
+            builder.append('\n');
+            ((SimpleGroup) value).appendToString(builder, indent + "  ");
+          } else {
+            builder.append(": ").append(value.toString()).append('\n');
           }
         }
       }
     }
-    return result;
+    return builder;
+  }
+
+  public String toString(String indent) {
+    StringBuilder builder = new StringBuilder();
+    appendToString(builder, indent);
+    return builder.toString();
   }
 
   @Override
@@ -200,7 +204,7 @@ public class SimpleGroup extends Group {
         break;
       default:
         throw new UnsupportedOperationException(
-          getType().asPrimitiveType().getName() + " not supported for Binary");
+            getType().asPrimitiveType().getName() + " not supported for Binary");
     }
   }
 

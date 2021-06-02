@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -18,7 +18,6 @@
  */
 package org.apache.parquet.hadoop;
 
-
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -27,7 +26,11 @@ import org.apache.hadoop.fs.Path;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.Version;
 import org.apache.parquet.bytes.BytesUtils;
+import org.apache.parquet.column.page.DataPageV2;
+import org.apache.parquet.column.values.bloomfilter.BlockSplitBloomFilter;
+import org.apache.parquet.column.values.bloomfilter.BloomFilter;
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel;
+import org.apache.parquet.io.ParquetEncodingException;
 import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
@@ -36,6 +39,7 @@ import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.page.DataPage;
 import org.apache.parquet.column.page.DataPageV1;
+import org.apache.parquet.column.page.DictionaryPage;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.column.statistics.BinaryStatistics;
@@ -59,12 +63,14 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.Callable;
 
 import static org.apache.parquet.CorruptStatistics.shouldIgnoreStatistics;
 import static org.apache.parquet.hadoop.ParquetFileWriter.Mode.OVERWRITE;
 import static org.junit.Assert.*;
 import static org.apache.parquet.column.Encoding.BIT_PACKED;
 import static org.apache.parquet.column.Encoding.PLAIN;
+import static org.apache.parquet.column.Encoding.RLE_DICTIONARY;
 import static org.apache.parquet.format.converter.ParquetMetadataConverter.MAX_STATS_SIZE;
 import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY;
 import static org.apache.parquet.schema.Type.Repetition.*;
@@ -153,12 +159,15 @@ public class TestParquetFileWriter {
     w.startBlock(3);
     w.startColumn(C1, 5, CODEC);
     long c1Starts = w.getPos();
+    long c1p1Starts = w.getPos();
     w.writeDataPage(2, 4, BytesInput.from(BYTES1), EMPTY_STATS, BIT_PACKED, BIT_PACKED, PLAIN);
     w.writeDataPage(3, 4, BytesInput.from(BYTES1), EMPTY_STATS, BIT_PACKED, BIT_PACKED, PLAIN);
     w.endColumn();
     long c1Ends = w.getPos();
     w.startColumn(C2, 6, CODEC);
     long c2Starts = w.getPos();
+    w.writeDictionaryPage(new DictionaryPage(BytesInput.from(BYTES2), 4, RLE_DICTIONARY));
+    long c2p1Starts = w.getPos();
     w.writeDataPage(2, 4, BytesInput.from(BYTES2), EMPTY_STATS, BIT_PACKED, BIT_PACKED, PLAIN);
     w.writeDataPage(3, 4, BytesInput.from(BYTES2), EMPTY_STATS, BIT_PACKED, BIT_PACKED, PLAIN);
     w.writeDataPage(1, 4, BytesInput.from(BYTES2), EMPTY_STATS, BIT_PACKED, BIT_PACKED, PLAIN);
@@ -177,17 +186,26 @@ public class TestParquetFileWriter {
 
     ParquetMetadata readFooter = ParquetFileReader.readFooter(configuration, path);
     assertEquals("footer: "+ readFooter, 2, readFooter.getBlocks().size());
-    assertEquals(c1Ends - c1Starts, readFooter.getBlocks().get(0).getColumns().get(0).getTotalSize());
-    assertEquals(c2Ends - c2Starts, readFooter.getBlocks().get(0).getColumns().get(1).getTotalSize());
-    assertEquals(c2Ends - c1Starts, readFooter.getBlocks().get(0).getTotalByteSize());
+    BlockMetaData rowGroup = readFooter.getBlocks().get(0);
+    assertEquals(c1Ends - c1Starts, rowGroup.getColumns().get(0).getTotalSize());
+    assertEquals(c2Ends - c2Starts, rowGroup.getColumns().get(1).getTotalSize());
+    assertEquals(c2Ends - c1Starts, rowGroup.getTotalByteSize());
+
+    assertEquals(c1Starts, rowGroup.getColumns().get(0).getStartingPos());
+    assertEquals(0, rowGroup.getColumns().get(0).getDictionaryPageOffset());
+    assertEquals(c1p1Starts, rowGroup.getColumns().get(0).getFirstDataPageOffset());
+    assertEquals(c2Starts, rowGroup.getColumns().get(1).getStartingPos());
+    assertEquals(c2Starts, rowGroup.getColumns().get(1).getDictionaryPageOffset());
+    assertEquals(c2p1Starts, rowGroup.getColumns().get(1).getFirstDataPageOffset());
+
     HashSet<Encoding> expectedEncoding=new HashSet<Encoding>();
     expectedEncoding.add(PLAIN);
     expectedEncoding.add(BIT_PACKED);
-    assertEquals(expectedEncoding,readFooter.getBlocks().get(0).getColumns().get(0).getEncodings());
+    assertEquals(expectedEncoding,rowGroup.getColumns().get(0).getEncodings());
 
     { // read first block of col #1
       ParquetFileReader r = new ParquetFileReader(configuration, readFooter.getFileMetaData(), path,
-          Arrays.asList(readFooter.getBlocks().get(0)), Arrays.asList(SCHEMA.getColumnDescription(PATH1)));
+          Arrays.asList(rowGroup), Arrays.asList(SCHEMA.getColumnDescription(PATH1)));
       PageReadStore pages = r.readNextRowGroup();
       assertEquals(3, pages.getRowCount());
       validateContains(SCHEMA, pages, PATH1, 2, BytesInput.from(BYTES1));
@@ -220,11 +238,128 @@ public class TestParquetFileWriter {
   }
 
   @Test
+  public void testWriteEmptyBlock() throws Exception {
+    File testFile = temp.newFile();
+    testFile.delete();
+
+    Path path = new Path(testFile.toURI());
+    Configuration configuration = new Configuration();
+
+    ParquetFileWriter w = new ParquetFileWriter(configuration, SCHEMA, path);
+    w.start();
+    w.startBlock(0);
+
+    TestUtils.assertThrows("End block with zero record", ParquetEncodingException.class,
+      (Callable<Void>) () -> {
+      w.endBlock();
+      return null;
+    });
+  }
+
+  @Test
+  public void testBloomFilterWriteRead() throws Exception {
+    MessageType schema = MessageTypeParser.parseMessageType("message test { required binary foo; }");
+    File testFile = temp.newFile();
+    testFile.delete();
+    Path path = new Path(testFile.toURI());
+    Configuration configuration = new Configuration();
+    configuration.set("parquet.bloom.filter.column.names", "foo");
+    String[] colPath = {"foo"};
+    ColumnDescriptor col = schema.getColumnDescription(colPath);
+    BinaryStatistics stats1 = new BinaryStatistics();
+    ParquetFileWriter w = new ParquetFileWriter(configuration, schema, path);
+    w.start();
+    w.startBlock(3);
+    w.startColumn(col, 5, CODEC);
+    w.writeDataPage(2, 4, BytesInput.from(BYTES1),stats1, BIT_PACKED, BIT_PACKED, PLAIN);
+    w.writeDataPage(3, 4, BytesInput.from(BYTES1),stats1, BIT_PACKED, BIT_PACKED, PLAIN);
+    w.endColumn();
+    BloomFilter blockSplitBloomFilter = new BlockSplitBloomFilter(0);
+    blockSplitBloomFilter.insertHash(blockSplitBloomFilter.hash(Binary.fromString("hello")));
+    blockSplitBloomFilter.insertHash(blockSplitBloomFilter.hash(Binary.fromString("world")));
+    w.addBloomFilter("foo", blockSplitBloomFilter);
+    w.endBlock();
+    w.end(new HashMap<>());
+    ParquetMetadata readFooter = ParquetFileReader.readFooter(configuration, path);
+    ParquetFileReader r = new ParquetFileReader(configuration, readFooter.getFileMetaData(), path,
+      Arrays.asList(readFooter.getBlocks().get(0)), Arrays.asList(schema.getColumnDescription(colPath)));
+    BloomFilterReader bloomFilterReader = r.getBloomFilterDataReader(readFooter.getBlocks().get(0));
+    BloomFilter bloomFilter = bloomFilterReader.readBloomFilter(readFooter.getBlocks().get(0).getColumns().get(0));
+    assertTrue(bloomFilter.findHash(blockSplitBloomFilter.hash(Binary.fromString("hello"))));
+    assertTrue(bloomFilter.findHash(blockSplitBloomFilter.hash(Binary.fromString("world"))));
+  }
+
+  @Test
+  public void testWriteReadDataPageV2() throws Exception {
+    File testFile = temp.newFile();
+    testFile.delete();
+
+    Path path = new Path(testFile.toURI());
+    Configuration configuration = new Configuration();
+
+    ParquetFileWriter w = new ParquetFileWriter(configuration, SCHEMA, path);
+    w.start();
+    w.startBlock(14);
+
+    BytesInput repLevels = BytesInput.fromInt(2);
+    BytesInput defLevels = BytesInput.fromInt(1);
+    BytesInput data = BytesInput.fromInt(3);
+    BytesInput data2 = BytesInput.fromInt(10);
+
+    org.apache.parquet.column.statistics.Statistics<?> statsC1P1 = createStatistics("s", "z", C1);
+    org.apache.parquet.column.statistics.Statistics<?> statsC1P2 = createStatistics("b", "d", C1);
+
+    w.startColumn(C1, 6, CODEC);
+    long c1Starts = w.getPos();
+    w.writeDataPageV2(4, 1, 3, repLevels, defLevels, PLAIN, data,  4, statsC1P1);
+    w.writeDataPageV2(3, 0, 3, repLevels, defLevels, PLAIN, data,  4, statsC1P2);
+    w.endColumn();
+    long c1Ends = w.getPos();
+
+    w.startColumn(C2, 5, CODEC);
+    long c2Starts = w.getPos();
+    w.writeDataPageV2(5, 2, 3, repLevels, defLevels, PLAIN, data2,  4, EMPTY_STATS);
+    w.writeDataPageV2(2, 0, 2, repLevels, defLevels, PLAIN, data2,  4, EMPTY_STATS);
+    w.endColumn();
+    long c2Ends = w.getPos();
+
+    w.endBlock();
+    w.end(new HashMap<>());
+
+    ParquetMetadata readFooter = ParquetFileReader.readFooter(configuration, path);
+    assertEquals("footer: "+ readFooter, 1, readFooter.getBlocks().size());
+    assertEquals(c1Ends - c1Starts, readFooter.getBlocks().get(0).getColumns().get(0).getTotalSize());
+    assertEquals(c2Ends - c2Starts, readFooter.getBlocks().get(0).getColumns().get(1).getTotalSize());
+    assertEquals(c2Ends - c1Starts, readFooter.getBlocks().get(0).getTotalByteSize());
+
+    //check for stats
+    org.apache.parquet.column.statistics.Statistics<?> expectedStats = createStatistics("b", "z", C1);
+    TestUtils.assertStatsValuesEqual(expectedStats, readFooter.getBlocks().get(0).getColumns().get(0).getStatistics());
+
+    HashSet<Encoding> expectedEncoding = new HashSet<Encoding>();
+    expectedEncoding.add(PLAIN);
+    assertEquals(expectedEncoding, readFooter.getBlocks().get(0).getColumns().get(0).getEncodings());
+
+    ParquetFileReader reader = new ParquetFileReader(configuration, readFooter.getFileMetaData(), path,
+      readFooter.getBlocks(), Arrays.asList(SCHEMA.getColumnDescription(PATH1), SCHEMA.getColumnDescription(PATH2)));
+
+    PageReadStore pages = reader.readNextRowGroup();
+    assertEquals(14, pages.getRowCount());
+    validateV2Page(SCHEMA, pages, PATH1, 3, 4, 1, repLevels.toByteArray(), defLevels.toByteArray(), data.toByteArray(), 12);
+    validateV2Page(SCHEMA, pages, PATH1, 3, 3, 0, repLevels.toByteArray(), defLevels.toByteArray(),data.toByteArray(), 12);
+    validateV2Page(SCHEMA, pages, PATH2, 3, 5, 2, repLevels.toByteArray(), defLevels.toByteArray(), data2.toByteArray(), 12);
+    validateV2Page(SCHEMA, pages, PATH2, 2, 2, 0, repLevels.toByteArray(), defLevels.toByteArray(), data2.toByteArray(), 12);
+    assertNull(reader.readNextRowGroup());
+  }
+
+  @Test
   public void testAlignmentWithPadding() throws Exception {
     File testFile = temp.newFile();
 
     Path path = new Path(testFile.toURI());
     Configuration conf = new Configuration();
+    // Disable writing out checksums as hardcoded byte offsets in assertions below expect it
+    conf.setBoolean(ParquetOutputFormat.PAGE_WRITE_CHECKSUM_ENABLED, false);
 
     // uses the test constructor
     ParquetFileWriter w = new ParquetFileWriter(conf, SCHEMA, path, 120, 60);
@@ -330,6 +465,8 @@ public class TestParquetFileWriter {
 
     Path path = new Path(testFile.toURI());
     Configuration conf = new Configuration();
+    // Disable writing out checksums as hardcoded byte offsets in assertions below expect it
+    conf.setBoolean(ParquetOutputFormat.PAGE_WRITE_CHECKSUM_ENABLED, false);
 
     // uses the test constructor
     ParquetFileWriter w = new ParquetFileWriter(conf, SCHEMA, path, 100, 50);
@@ -676,6 +813,25 @@ public class TestParquetFileWriter {
     w.end(extraMetaData);
   }
 
+  private void validateV2Page(MessageType schema, PageReadStore pages, String[] path, int values, int rows, int nullCount,
+                              byte[] repetition, byte[] definition, byte[] data, int uncompressedSize) throws IOException {
+    PageReader pageReader = pages.getPageReader(schema.getColumnDescription(path));
+    DataPageV2 page = (DataPageV2)pageReader.readPage();
+    assertEquals(values, page.getValueCount());
+    assertEquals(rows, page.getRowCount());
+    assertEquals(nullCount, page.getNullCount());
+    assertEquals(uncompressedSize, page.getUncompressedSize());
+    assertArrayEquals(repetition, page.getRepetitionLevels().toByteArray());
+    assertArrayEquals(definition, page.getDefinitionLevels().toByteArray());
+    assertArrayEquals(data, page.getData().toByteArray());
+  }
+
+  private org.apache.parquet.column.statistics.Statistics<?> createStatistics(String min, String max, ColumnDescriptor col) {
+    return org.apache.parquet.column.statistics.Statistics .getBuilderForReading(col.getPrimitiveType())
+      .withMin(Binary.fromString(min).getBytes()).withMax(Binary.fromString(max).getBytes()).withNumNulls(0)
+      .build();
+  }
+
   private void validateContains(MessageType schema, PageReadStore pages, String[] path, int values, BytesInput bytes) throws IOException {
     PageReader pageReader = pages.getPageReader(schema.getColumnDescription(path));
     DataPage page = pageReader.readPage();
@@ -885,6 +1041,63 @@ public class TestParquetFileWriter {
 
       assertNull(reader.readColumnIndex(footer.getBlocks().get(2).getColumns().get(0)));
     }
+  }
+
+  @Test
+  public void testMergeMetadataWithConflictingKeyValues() {
+    Map<String, String> keyValues1 = new HashMap<String, String>() {{
+      put("a", "b");
+    }};
+    Map<String, String> keyValues2 = new HashMap<String, String>() {{
+      put("a", "c");
+    }};
+    FileMetaData md1 = new FileMetaData(
+      new MessageType("root1",
+        new PrimitiveType(REPEATED, BINARY, "a"),
+        new PrimitiveType(OPTIONAL, BINARY, "b")),
+     keyValues1, "test");
+    FileMetaData md2 = new FileMetaData(
+      new MessageType("root1",
+        new PrimitiveType(REPEATED, BINARY, "a"),
+        new PrimitiveType(OPTIONAL, BINARY, "b")),
+      keyValues2, "test");
+    GlobalMetaData merged = ParquetFileWriter.mergeInto(md2, ParquetFileWriter.mergeInto(md1, null));
+    try {
+      merged.merge(new StrictKeyValueMetadataMergeStrategy());
+      fail("Merge metadata is expected to fail because of conflicting key values");
+    } catch (RuntimeException e) {
+      // expected because of conflicting values
+      assertTrue(e.getMessage().contains("could not merge metadata"));
+    }
+
+    Map<String, String> mergedKeyValues = merged.merge(new ConcatenatingKeyValueMetadataMergeStrategy()).getKeyValueMetaData();
+    assertEquals(1, mergedKeyValues.size());
+    String mergedValue = mergedKeyValues.get("a");
+    assertTrue(mergedValue.equals("b,c") || mergedValue.equals("c,b"));
+  }
+
+  @Test
+  public void testMergeMetadataWithNoConflictingKeyValues() {
+    Map<String, String> keyValues1 = new HashMap<String, String>() {{
+      put("a", "b");
+    }};
+    Map<String, String> keyValues2 = new HashMap<String, String>() {{
+      put("c", "d");
+    }};
+    FileMetaData md1 = new FileMetaData(
+      new MessageType("root1",
+        new PrimitiveType(REPEATED, BINARY, "a"),
+        new PrimitiveType(OPTIONAL, BINARY, "b")),
+      keyValues1, "test");
+    FileMetaData md2 = new FileMetaData(
+      new MessageType("root1",
+        new PrimitiveType(REPEATED, BINARY, "a"),
+        new PrimitiveType(OPTIONAL, BINARY, "b")),
+      keyValues2, "test");
+    GlobalMetaData merged = ParquetFileWriter.mergeInto(md2, ParquetFileWriter.mergeInto(md1, null));
+    Map<String, String> mergedValues = merged.merge(new StrictKeyValueMetadataMergeStrategy()).getKeyValueMetaData();
+    assertEquals("b", mergedValues.get("a"));
+    assertEquals("d", mergedValues.get("c"));
   }
 
   private org.apache.parquet.column.statistics.Statistics<?> statsC1(Binary... values) {

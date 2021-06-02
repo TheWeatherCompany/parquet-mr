@@ -105,7 +105,9 @@ public class CodecFactory implements CompressionCodecFactory {
     public BytesInput decompress(BytesInput bytes, int uncompressedSize) throws IOException {
       final BytesInput decompressed;
       if (codec != null) {
-        decompressor.reset();
+        if (decompressor != null) {
+          decompressor.reset();
+        }
         InputStream is = codec.createInputStream(bytes.toInputStream(), decompressor);
         decompressed = BytesInput.from(is, uncompressedSize);
       } else {
@@ -227,7 +229,13 @@ public class CodecFactory implements CompressionCodecFactory {
     }
 
     try {
-      Class<?> codecClass = Class.forName(codecClassName);
+      Class<?> codecClass;
+      try {
+        codecClass = Class.forName(codecClassName);
+      } catch (ClassNotFoundException e) {
+        // Try to load the class using the job classloader
+        codecClass = configuration.getClassLoader().loadClass(codecClassName);
+      }
       codec = (CompressionCodec) ReflectionUtils.newInstance(codecClass, configuration);
       CODEC_BY_NAME.put(codecClassName, codec);
       return codec;

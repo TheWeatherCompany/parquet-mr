@@ -20,7 +20,6 @@
 package org.apache.parquet.statistics;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.column.impl.ColumnReaderImpl;
@@ -36,8 +35,6 @@ import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetWriter;
-import org.apache.parquet.hadoop.example.GroupWriteSupport;
-import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.PrimitiveConverter;
@@ -71,60 +68,6 @@ import static org.junit.Assert.assertEquals;
 public class TestStatistics {
   private static final int MEGABYTE = 1 << 20;
   private static final long RANDOM_SEED = 1441990701846L; //System.currentTimeMillis();
-
-  public static class DataGenerationContext {
-    public static abstract class WriteContext {
-      protected final File path;
-      protected final Path fsPath;
-      protected final MessageType schema;
-      protected final int blockSize;
-      protected final int pageSize;
-      protected final boolean enableDictionary;
-      protected final boolean enableValidation;
-      protected final ParquetProperties.WriterVersion version;
-
-      public WriteContext(File path, MessageType schema, int blockSize, int pageSize, boolean enableDictionary, boolean enableValidation, ParquetProperties.WriterVersion version) throws IOException {
-        this.path = path;
-        this.fsPath = new Path(path.toString());
-        this.schema = schema;
-        this.blockSize = blockSize;
-        this.pageSize = pageSize;
-        this.enableDictionary = enableDictionary;
-        this.enableValidation = enableValidation;
-        this.version = version;
-      }
-
-      public abstract void write(ParquetWriter<Group> writer) throws IOException;
-      public abstract void test() throws IOException;
-    }
-
-    public static void writeAndTest(WriteContext context) throws IOException {
-      // Create the configuration, and then apply the schema to our configuration.
-      Configuration configuration = new Configuration();
-      GroupWriteSupport.setSchema(context.schema, configuration);
-      GroupWriteSupport groupWriteSupport = new GroupWriteSupport();
-
-      // Create the writer properties
-      final int blockSize = context.blockSize;
-      final int pageSize = context.pageSize;
-      final int dictionaryPageSize = pageSize;
-      final boolean enableDictionary = context.enableDictionary;
-      final boolean enableValidation = context.enableValidation;
-      ParquetProperties.WriterVersion writerVersion = context.version;
-      CompressionCodecName codec = CompressionCodecName.UNCOMPRESSED;
-
-      ParquetWriter<Group> writer = new ParquetWriter<Group>(context.fsPath,
-          groupWriteSupport, codec, blockSize, pageSize, dictionaryPageSize,
-          enableDictionary, enableValidation, writerVersion, configuration);
-
-      context.write(writer);
-      writer.close();
-
-      context.test();
-
-      context.path.delete();
-    }
-  }
 
   public static class SingletonPageReader implements PageReader {
     private final DictionaryPage dict;
@@ -299,9 +242,6 @@ public class TestStatistics {
       if (stats.isEmpty()) {
         // stats are empty if num nulls = 0 and there are no non-null values
         // this happens if stats are not written (e.g., when stats are too big)
-        System.err.println(String.format(
-            "No stats written for page=%s col=%s",
-            page, Arrays.toString(desc.getPath())));
         return;
       }
 
@@ -317,12 +257,6 @@ public class TestStatistics {
       }
 
       Assert.assertEquals(numNulls, stats.getNumNulls());
-
-      System.err.println(String.format(
-          "Validated stats min=%s max=%s nulls=%d for page=%s col=%s",
-          stats.minAsString(),
-          stats.maxAsString(), stats.getNumNulls(), page,
-          Arrays.toString(desc.getPath())));
     }
   }
 
@@ -476,17 +410,18 @@ public class TestStatistics {
       Configuration configuration = new Configuration();
       ParquetMetadata metadata = ParquetFileReader.readFooter(configuration,
           super.fsPath, ParquetMetadataConverter.NO_FILTER);
-      ParquetFileReader reader = new ParquetFileReader(configuration,
+      try (ParquetFileReader reader = new ParquetFileReader(configuration,
         metadata.getFileMetaData(),
         super.fsPath,
         metadata.getBlocks(),
-        metadata.getFileMetaData().getSchema().getColumns());
+        metadata.getFileMetaData().getSchema().getColumns())) {
 
-      PageStatsValidator validator = new PageStatsValidator();
+        PageStatsValidator validator = new PageStatsValidator();
 
-      PageReadStore pageReadStore;
-      while ((pageReadStore = reader.readNextRowGroup()) != null) {
-        validator.validate(metadata.getFileMetaData().getSchema(), pageReadStore);
+        PageReadStore pageReadStore;
+        while ((pageReadStore = reader.readNextRowGroup()) != null) {
+          validator.validate(metadata.getFileMetaData().getSchema(), pageReadStore);
+        }
       }
     }
   }

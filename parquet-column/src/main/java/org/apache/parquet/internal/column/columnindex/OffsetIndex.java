@@ -52,6 +52,15 @@ public interface OffsetIndex {
 
   /**
    * @param pageIndex
+   *         the index of the page
+   * @return the original ordinal of the page in the column chunk
+   */
+  public default int getPageOrdinal(int pageIndex) {
+    return pageIndex;
+  }
+
+  /**
+   * @param pageIndex
    *          the index of the page
    * @param rowGroupRowCount
    *          the total number of rows in the row-group

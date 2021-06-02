@@ -1,4 +1,4 @@
-/* 
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -178,7 +178,7 @@ public class ThriftReadSupport<T> extends ReadSupport<T> {
     } else if (projectionFilter != null) {
       try {
         initThriftClassFromMultipleFiles(context.getKeyValueMetadata(), configuration);
-        requestedProjection =  getProjectedSchema(projectionFilter);
+        requestedProjection =  getProjectedSchema(configuration, projectionFilter);
       } catch (ClassNotFoundException e) {
         throw new ThriftProjectionException("can not find thriftClass from configuration", e);
       }
@@ -189,8 +189,18 @@ public class ThriftReadSupport<T> extends ReadSupport<T> {
   }
 
   @SuppressWarnings("unchecked")
-  protected MessageType getProjectedSchema(FieldProjectionFilter fieldProjectionFilter) {
-    return new ThriftSchemaConverter(fieldProjectionFilter).convert((Class<TBase<?, ?>>)thriftClass);
+  protected MessageType getProjectedSchema(Configuration configuration, FieldProjectionFilter
+      fieldProjectionFilter) {
+    return new ThriftSchemaConverter(configuration, fieldProjectionFilter)
+        .convert((Class<TBase<?, ?>>)thriftClass);
+  }
+
+  @Deprecated
+  @SuppressWarnings("unchecked")
+  protected MessageType getProjectedSchema(FieldProjectionFilter
+    fieldProjectionFilter) {
+    return new ThriftSchemaConverter(new Configuration(), fieldProjectionFilter)
+      .convert((Class<TBase<?, ?>>)thriftClass);
   }
 
   @SuppressWarnings("unchecked")
@@ -264,18 +274,14 @@ public class ThriftReadSupport<T> extends ReadSupport<T> {
         Constructor<ThriftRecordConverter<T>> constructor =
             converterClass.getConstructor(Class.class, MessageType.class, StructType.class, Configuration.class);
         return constructor.newInstance(thriftClass, requestedSchema, descriptor, conf);
-      } catch (IllegalAccessException e) {
+      } catch (IllegalAccessException | NoSuchMethodException e) {
         // try the other constructor pattern
-      } catch (NoSuchMethodException e) {
-        // try to find the other constructor pattern
       }
 
       Constructor<ThriftRecordConverter<T>> constructor =
           converterClass.getConstructor(Class.class, MessageType.class, StructType.class);
       return constructor.newInstance(thriftClass, requestedSchema, descriptor);
-    } catch (InstantiationException e) {
-      throw new RuntimeException("Failed to construct Thrift converter class: " + converterClassName, e);
-    } catch (InvocationTargetException e) {
+    } catch (InstantiationException | InvocationTargetException e) {
       throw new RuntimeException("Failed to construct Thrift converter class: " + converterClassName, e);
     } catch (IllegalAccessException e) {
       throw new RuntimeException("Cannot access constructor for Thrift converter class: " + converterClassName, e);
