@@ -25,7 +25,7 @@ import com.beust.jcommander.Parameters;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import java.util.List;
-
+//
 @Parameters(commandDescription = "Retrieves details on the functions of other commands")
 public class Help implements Command {
   @Parameter(description = "<commands>")
