@@ -33,6 +33,7 @@
   <url>https://parquet.apache.org</url>
 
   <properties>
+    <skipTests>true</skipTests>
   </properties>
 
   <dependencies>
@@ -40,18 +41,23 @@
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-column</artifactId>
       <version>${project.version}</version>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-column/target/parquet-column-1.13.0-SNAPSHOT.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-format-structures</artifactId>
       <version>${project.version}</version>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-format-structures/target/parquet-format-structures-1.13.0-SNAPSHOT.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-column</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
-      <scope>test</scope>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-column/target/parquet-column-1.13.0-SNAPSHOT-tests.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
@@ -69,6 +75,8 @@
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-jackson</artifactId>
       <version>${project.version}</version>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-jackson/target/parquet-jackson-1.13.0-SNAPSHOT.jar</systemPath>
     </dependency>
     <dependency>
       <groupId>${jackson.groupId}</groupId>
@@ -126,6 +134,18 @@
       <artifactId>okhttp</artifactId>
       <version>4.6.0</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.parquet</groupId>
+      <artifactId>parquet-common</artifactId>
+      <version>1.13.0-SNAPSHOT</version>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-common/target/parquet-common-1.13.0-SNAPSHOT.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>net.openhft</groupId>
+      <artifactId>zero-allocation-hashing</artifactId>
+      <version>${net.openhft.version}</version>
     </dependency>
   </dependencies>
 

@@ -65,7 +65,7 @@ public class InternalParquetRecordWriter<T> {
   private ColumnChunkPageWriteStore pageStore;
   private BloomFilterWriteStore bloomFilterWriteStore;
   private RecordConsumer recordConsumer;
-  
+
   private InternalFileEncryptor fileEncryptor;
   private int rowGroupOrdinal;
 
@@ -164,12 +164,12 @@ public class InternalParquetRecordWriter<T> {
         LOG.debug("mem size {} > {}: flushing {} records to disk.", memSize, nextRowGroupSize, recordCount);
         flushRowGroupToStore();
         initStore();
-        recordCountForNextMemCheck = min(max(MINIMUM_RECORD_COUNT_FOR_CHECK, recordCount / 2), MAXIMUM_RECORD_COUNT_FOR_CHECK);
+        recordCountForNextMemCheck = min(max(CustomInternalParquetRecordWriter.MINIMUM_RECORD_COUNT_FOR_CHECK, recordCount / 2), CustomInternalParquetRecordWriter.MAXIMUM_RECORD_COUNT_FOR_CHECK);
         this.lastRowGroupEndPos = parquetFileWriter.getPos();
       } else {
         recordCountForNextMemCheck = min(
-                max(MINIMUM_RECORD_COUNT_FOR_CHECK, (recordCount + (long)(nextRowGroupSize / ((float)recordSize))) / 2), // will check halfway
-                recordCount + MAXIMUM_RECORD_COUNT_FOR_CHECK // will not look more than max records ahead
+                max(CustomInternalParquetRecordWriter.MINIMUM_RECORD_COUNT_FOR_CHECK, (recordCount + (long)(nextRowGroupSize / ((float)recordSize))) / 2), // will check halfway
+                recordCount + CustomInternalParquetRecordWriter.MAXIMUM_RECORD_COUNT_FOR_CHECK // will not look more than max records ahead
         );
         LOG.debug("In 'bulk checkBlockSizeReached' Checked mem at {} will check again at: {}", recordCount, recordCountForNextMemCheck);
       }

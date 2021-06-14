@@ -42,8 +42,8 @@ import static org.apache.parquet.Preconditions.checkNotNull;
 public class CustomInternalParquetRecordWriter<T> {
   private static final Logger LOG = LoggerFactory.getLogger(CustomInternalParquetRecordWriter.class);
 
-  private static final int MINIMUM_RECORD_COUNT_FOR_CHECK = 100;
-  private static final int MAXIMUM_RECORD_COUNT_FOR_CHECK = 10000;
+  public static final int MINIMUM_RECORD_COUNT_FOR_CHECK = 100;
+  public static final int MAXIMUM_RECORD_COUNT_FOR_CHECK = 10000;
 
   private final ParquetFileWriter parquetFileWriter;
   private final WriteSupport<T> writeSupport;

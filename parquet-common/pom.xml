@@ -40,6 +40,8 @@
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-format-structures</artifactId>
       <version>${project.version}</version>
+      <scope>system</scope>
+      <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-format-structures/target/parquet-format-structures-1.13.0-SNAPSHOT.jar</systemPath>
     </dependency>
 
     <dependency>
@@ -87,6 +89,8 @@
             <groupId>org.apache.parquet</groupId>
             <artifactId>parquet-generator</artifactId>
             <version>${project.version}</version>
+            <scope>system</scope>
+            <systemPath>/Users/iritma/Documents/develop/parquet-mr/parquet-generator/target/parquet-generator-1.13.0-SNAPSHOT.jar</systemPath>
           </dependency>
         </dependencies>
         <executions>

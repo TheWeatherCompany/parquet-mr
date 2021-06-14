@@ -277,7 +277,7 @@ public class CustomParquetWriter<T> implements Closeable {
     MessageType schema = writeContext.getSchema();
 
     ParquetFileWriter fileWriter = new ParquetFileWriter(
-        file, schema, mode, rowGroupSize, maxPaddingSize, encodingProps.getColumnIndexTruncateLength());
+        file, schema, mode, rowGroupSize, maxPaddingSize/*, encodingProps.getColumnIndexTruncateLength()*/);
     fileWriter.start();
 
     this.codecFactory = new CodecFactory(conf, encodingProps.getPageSizeThreshold());
